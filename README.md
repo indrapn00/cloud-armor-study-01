@@ -171,6 +171,9 @@ Full verbatim terminal outputs are saved in **[`logs/pre_armor_verification.txt`
 > # Remove only the Cloud Armor policy (keep Cloud Run + XLB route alive)
 > ./scripts/cleanup_resources.sh --policy-only
 >
-> # Or remove all demo resources (Cloud Armor policy + gcp2demo01 route + backend service + NEG + Cloud Run)
+> # Or remove all demo resources (dynamically discovers GUI/CLI path matcher on gcp2-xlb, then deletes backend service, NEG, and Cloud Run)
 > ./scripts/cleanup_resources.sh --all
+>
+> # Re-deploy the entire study environment from scratch in one command:
+> ./scripts/deploy_all.sh
 > ```

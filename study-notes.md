@@ -696,4 +696,13 @@ Below are 3 verbatim excerpts from **[`logs/cloud_armor_sample_logs.json`](./log
 
 # OR delete all study resources cleanly while preserving pre-existing gcp2-xlb routes:
 ./scripts/cleanup_resources.sh --all
+
+# To re-provision the entire environment from scratch in one command:
+./scripts/deploy_all.sh
 ```
+
+> [!NOTE]
+> **Why `cleanup_resources.sh` Dynamically Discovers the Path Matcher Name on `gcp2-xlb`:**
+> When you add a Host and Path Rule for `gcp2demo01.iphamsterviel.org` using the **Google Cloud Console GUI** (Simple host and path rule mode), the Console UI automatically names the path matcher **`path-matcher-1`** (or `path-matcher-2`), whereas `gcloud compute url-maps add-path-matcher` uses `--path-matcher-name=cloud-armor-demo-matcher`.
+> If a cleanup script only tries to delete a hardcoded `cloud-armor-demo-matcher`, `remove-path-matcher` fails to remove `path-matcher-1`, which in turn causes `backend-services delete` and `network-endpoint-groups delete` to fail with `resource ... is already being used by 'projects/.../global/urlMaps/gcp2-xlb'`.
+> Our updated [`scripts/cleanup_resources.sh`](./scripts/cleanup_resources.sh) inspects `gcp2-xlb`'s JSON definition and dynamically removes any path matcher tied to `gcp2demo01.iphamsterviel.org` or `cloud-armor-demo-backend-svc` before deleting the backend service and Serverless NEG.
