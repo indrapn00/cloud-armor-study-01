@@ -1,7 +1,7 @@
 ================================================================================
  Google Cloud Armor Defensive Study Verification Suite
  Mode                 : post-armor
- Timestamp (UTC)      : 2026-10-22T04:49:32Z
+ Timestamp (UTC)      : 2026-10-22T07:20:25Z
  GCP Project          : gcp-demo-02-307713
  Cloud Run Direct URL : https://cloud-armor-demo-service-66063681189.asia-southeast2.run.app
  XLB Public Endpoint  : https://gcp2demo01.iphamsterviel.org (34.49.218.84)
@@ -27,7 +27,13 @@
   Response Preview   : <!DOCTYPE html> <html lang="en"> <head>   <meta charset="utf-8" />   <meta name="viewport" content="width=device-width, initial-scale=1" />   <title>Executive Vault Portal — Cloud Armor Study Next Page</title>   <link href="https://fonts.googleapis.com/css2?
 
 --------------------------------------------------------------------------------
-[TEST 2C] SQLi Auth Bypass Login Submission (POST https://gcp2demo01.iphamsterviel.org/login -> admin' OR '1'='1)
+[TEST 2C-1] SQLi Auth Bypass Login Submission (POST https://gcp2demo01.iphamsterviel.org/login -> admin' OR '1'='1)
+  Expected (post-armor) : HTTP 403 (BLOCKED at edge by Cloud Armor OWASP SQLi Rule Priority 2000 sqli-v33-stable)
+  Actual HTTP Status : HTTP 403
+  Response Preview   : <!doctype html><meta charset="utf-8"><meta name=viewport content="width=device-width, initial-scale=1"><title>403</title>403 Forbidden
+
+--------------------------------------------------------------------------------
+[TEST 2C-2] SQLi Comment Bypass Login Submission (POST https://gcp2demo01.iphamsterviel.org/login -> admin' -- )
   Expected (post-armor) : HTTP 403 (BLOCKED at edge by Cloud Armor OWASP SQLi Rule Priority 2000 sqli-v33-stable)
   Actual HTTP Status : HTTP 403
   Response Preview   : <!doctype html><meta charset="utf-8"><meta name=viewport content="width=device-width, initial-scale=1"><title>403</title>403 Forbidden
@@ -54,7 +60,7 @@
 [TEST 4] Admin Diagnostics WITH Valid X-Admin-Token Header (GET https://gcp2demo01.iphamsterviel.org/admin/diagnostics)
   Expected (post-armor) : HTTP 200 (Allowed by Cloud Armor when valid X-Admin-Token is present)
   Actual HTTP Status : HTTP 200
-  Response Preview   : {"endpoint":"/admin/diagnostics","service":"cloud-armor-demo-service","revision":"cloud-armor-demo-service-00002-k7w","timestamp_utc":"2026-10-22T04:49:33.783956+00:00","admin_token_present":true,"admin_token_valid":true,"security_observation":"AUTHORIZED: Val
+  Response Preview   : {"endpoint":"/admin/diagnostics","service":"cloud-armor-demo-service","revision":"cloud-armor-demo-service-00002-k7w","timestamp_utc":"2026-10-22T07:20:26.231170+00:00","admin_token_present":true,"admin_token_valid":true,"security_observation":"AUTHORIZED: Val
 
 --------------------------------------------------------------------------------
 [TEST 5A] Inspect Endpoint WITH Benign Test Header 'X-Policy-Test: block-me'

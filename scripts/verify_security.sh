@@ -114,12 +114,21 @@ run_check "TEST 2B" \
   "${BASE_URL}/login"
 
 # Test 2C: SQL Injection Login Bypass Submission -> Next Page vs HTTP 403 Block
-run_check "TEST 2C" \
+run_check "TEST 2C-1" \
   "SQLi Auth Bypass Login Submission (POST ${BASE_URL}/login -> admin' OR '1'='1)" \
   "${EXP_SQLI_LOGIN}" \
   -X POST \
   --data-urlencode "username=admin' OR '1'='1" \
   --data-urlencode "password=anything" \
+  "${BASE_URL}/login"
+
+# Test 2C-2: SQL Injection Comment Bypass Submission -> Next Page vs HTTP 403 Block
+run_check "TEST 2C-2" \
+  "SQLi Comment Bypass Login Submission (POST ${BASE_URL}/login -> admin' -- )" \
+  "${EXP_SQLI_LOGIN}" \
+  -X POST \
+  --data-urlencode "username=admin' -- " \
+  --data-urlencode "password=ignored" \
   "${BASE_URL}/login"
 
 # Test 2D: Reflected XSS Search Form Submission

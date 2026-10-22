@@ -1,11 +1,10 @@
----
 advancedOptionsConfig:
   jsonParsing: STANDARD
   logLevel: VERBOSE
 creationTimestamp: '2026-10-21T21:16:40.202-07:00'
 description: Google Cloud Armor Defensive Study Policy (OWASP CRS v3.3 WAF, Custom
   CEL access/marker rules, and Rate Limiting)
-fingerprint: gPuWBtie5og=
+fingerprint: w4K_kkzrQJE=
 id: '699990130797326535'
 kind: compute#securityPolicy
 labelFingerprint: 42WmSpB8rSM=
@@ -32,24 +31,24 @@ rules:
   preview: false
   priority: 1100
 - action: deny(403)
-  description: OWASP ModSecurity CRS v3.3 SQL Injection (sqli-v33-stable) and Cross-Site
-    Scripting (xss-v33-stable)
+  description: Block SQLi (Sensitivity 3) and XSS (Sensitivity 2) using OWASP CRS
+    v3.3 preconfigured WAF rules
   kind: compute#securityPolicyRule
   match:
     expr:
-      expression: "evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 1})\
-        \ || evaluatePreconfiguredWaf('xss-v33-stable', {'sensitivity': 1})"
+      expression: "evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 3})\
+        \ || evaluatePreconfiguredWaf('xss-v33-stable', {'sensitivity': 2})"
   preview: false
   priority: 2000
 - action: deny(403)
-  description: OWASP ModSecurity CRS v3.3 Local File Inclusion (lfi), Remote Code
-    Execution (rce), and Scanner Detection
+  description: Block LFI, RCE, and Scanner probes using OWASP CRS v3.3 preconfigured
+    WAF rules (Sensitivity 2)
   kind: compute#securityPolicyRule
   match:
     expr:
-      expression: "evaluatePreconfiguredWaf('lfi-v33-stable', {'sensitivity': 1})\
-        \ || evaluatePreconfiguredWaf('rce-v33-stable', {'sensitivity': 1}) || evaluatePreconfiguredWaf('scannerdetection-v33-stable',\
-        \ {'sensitivity': 1})"
+      expression: "evaluatePreconfiguredWaf('lfi-v33-stable', {'sensitivity': 2})\
+        \ || evaluatePreconfiguredWaf('rce-v33-stable', {'sensitivity': 2}) || evaluatePreconfiguredWaf('scannerdetection-v33-stable',\
+        \ {'sensitivity': 2})"
   preview: false
   priority: 2100
 - action: allow
