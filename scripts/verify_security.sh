@@ -69,7 +69,11 @@ run_check() {
 
 if [[ "${MODE}" == "pre-armor" ]]; then
   EXP_DIRECT="HTTP 403/404 (Blocked by Cloud Run internal-and-cloud-load-balancing ingress; GFE returns 404 on internal-route Cloudtop)"
-  EXP_BASELINE="HTTP 200 (Allowed via gcp2-xlb)"
+  EXP_BASELINE="HTTP 200 (Interactive Browser Study Portal HTML via gcp2-xlb)"
+  EXP_VALID_LOGIN="HTTP 200 (Enters Next Page /portal/dashboard as demo_user)"
+  EXP_SQLI_LOGIN="HTTP 200 (VULNERABLE! SQLi Auth Bypass enters Next Page /portal/dashboard as admin)"
+  EXP_XSS_SEARCH="HTTP 200 (VULNERABLE! Reflected <script> vector reaches Cloud Run origin)"
+  EXP_LFI_VIEWER="HTTP 200 (VULNERABLE! Path traversal ../../../../etc/passwd reaches Cloud Run origin)"
   EXP_ADMIN_NO_AUTH="HTTP 200 (EXPOSED! Unprotected admin endpoint without Cloud Armor)"
   EXP_ADMIN_AUTH="HTTP 200 (Allowed with X-Admin-Token header)"
   EXP_HEADER_MARKER="HTTP 200 (UNFILTERED! Marker header X-Policy-Test: block-me reaches origin)"
@@ -77,7 +81,11 @@ if [[ "${MODE}" == "pre-armor" ]]; then
   EXP_BURST="All ${BURST_COUNT}/${BURST_COUNT} requests return HTTP 200 (UNTHROTTLED!)"
 else
   EXP_DIRECT="HTTP 403/404 (Blocked by Cloud Run internal-and-cloud-load-balancing ingress; GFE returns 404 on internal-route Cloudtop)"
-  EXP_BASELINE="HTTP 200 (Allowed via gcp2-xlb)"
+  EXP_BASELINE="HTTP 200 (Interactive Browser Study Portal HTML via gcp2-xlb)"
+  EXP_VALID_LOGIN="HTTP 200 (Allowed by Cloud Armor -> enters Next Page /portal/dashboard as demo_user)"
+  EXP_SQLI_LOGIN="HTTP 403 (BLOCKED at edge by Cloud Armor OWASP SQLi Rule Priority 2000 sqli-v33-stable)"
+  EXP_XSS_SEARCH="HTTP 403 (BLOCKED at edge by Cloud Armor OWASP XSS Rule Priority 2000 xss-v33-stable)"
+  EXP_LFI_VIEWER="HTTP 403 (BLOCKED at edge by Cloud Armor OWASP LFI Rule Priority 2100 lfi-v33-stable)"
   EXP_ADMIN_NO_AUTH="HTTP 403 (BLOCKED at edge by Cloud Armor Custom CEL Rule Priority 1000)"
   EXP_ADMIN_AUTH="HTTP 200 (Allowed by Cloud Armor when valid X-Admin-Token is present)"
   EXP_HEADER_MARKER="HTTP 403 (BLOCKED at edge by Cloud Armor Custom CEL Rule Priority 1100)"
@@ -91,11 +99,44 @@ run_check "TEST 1" \
   "${EXP_DIRECT}" \
   "${CLOUD_RUN_URL}/"
 
-# Test 2: Legitimate Baseline Request via XLB
+# Test 2: Legitimate Baseline Request via XLB (Browser Portal HTML)
 run_check "TEST 2" \
-  "Baseline Public Endpoint (GET ${BASE_URL}/)" \
+  "Interactive Browser Study Portal (GET ${BASE_URL}/)" \
   "${EXP_BASELINE}" \
   "${BASE_URL}/"
+
+# Test 2B: Valid Login Form Submission -> Next Page (/portal/dashboard)
+run_check "TEST 2B" \
+  "Valid Browser Login Submission (POST ${BASE_URL}/login -> demo_user)" \
+  "${EXP_VALID_LOGIN}" \
+  -X POST \
+  -d "username=demo_user&password=CloudArmor2026!" \
+  "${BASE_URL}/login"
+
+# Test 2C: SQL Injection Login Bypass Submission -> Next Page vs HTTP 403 Block
+run_check "TEST 2C" \
+  "SQLi Auth Bypass Login Submission (POST ${BASE_URL}/login -> admin' OR '1'='1)" \
+  "${EXP_SQLI_LOGIN}" \
+  -X POST \
+  --data-urlencode "username=admin' OR '1'='1" \
+  --data-urlencode "password=anything" \
+  "${BASE_URL}/login"
+
+# Test 2D: Reflected XSS Search Form Submission
+run_check "TEST 2D" \
+  "Browser Search XSS Test (GET ${BASE_URL}/search?q=<script>alert(1)</script>)" \
+  "${EXP_XSS_SEARCH}" \
+  -G \
+  --data-urlencode "q=<script>alert(1)</script>" \
+  "${BASE_URL}/search"
+
+# Test 2E: LFI Path Traversal Document Viewer Submission
+run_check "TEST 2E" \
+  "Browser Document Viewer LFI Test (GET ${BASE_URL}/viewer?doc=../../../../etc/passwd)" \
+  "${EXP_LFI_VIEWER}" \
+  -G \
+  --data-urlencode "doc=../../../../etc/passwd" \
+  "${BASE_URL}/viewer"
 
 # Test 3: Unprotected /admin/diagnostics WITHOUT X-Admin-Token header
 run_check "TEST 3" \

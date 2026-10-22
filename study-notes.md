@@ -231,6 +231,37 @@ When `--ingress=internal-and-cloud-load-balancing` is configured on Cloud Run:
 ================================================================================
 ```
 
+### 4.3 Interactive Web Browser Walkthrough (`https://gcp2demo01.iphamsterviel.org/`)
+
+In addition to CLI checks, our Cloud Run application serves an interactive **Web Browser Study Lab** at **`https://gcp2demo01.iphamsterviel.org/`** with 5 tabs so you can test vulnerabilities directly from your browser and watch how the page transitions work **before** and **after** attaching Cloud Armor:
+
+1. **Tab 1 — Login Portal (`SQLi Auth Bypass` $\rightarrow$ Enters Next Page `/portal/dashboard`):**
+   - Contains **Username** and **Password** inputs backed by an ephemeral in-memory SQLite table (`study_users`) and a live SQL query preview box:
+     ```sql
+     SELECT id, username, role, clearance, vault_note
+     FROM study_users
+     WHERE username = '<username>' AND password = '<password>';
+     ```
+   - **Test 1 (Valid Login — Works Both Pre-Armor & Post-Armor):**
+     - Click **`✅ Fill Valid User`** (`demo_user` / `CloudArmor2026!`) and click **`Sign In & Enter Next Page (/portal/dashboard) →`**.
+     - Your browser navigates to the **Executive Vault Next Page** displaying a green banner (`✅ LEGITIMATE SIGN-IN SUCCEEDED`) and your `demo_user` session record.
+   - **Test 2 (SQL Injection Login Bypass — Pre-Armor vs. Post-Armor):**
+     - Click **`🔓 Fill SQLi Auth Bypass: admin' OR '1'='1`** (or **`🔓 Fill SQLi Comment Bypass: admin' --`**).
+     - **When Cloud Armor is Detached (Pre-Armor):** Clicking **`Sign In & Enter Next Page (/portal/dashboard) →`** executes the tautology query (`WHERE username = 'admin' OR '1'='1' AND password = '...'`), bypasses authentication without knowing `admin`'s password, and **opens the Next Page (`/portal/dashboard`)** as `admin` (`LEVEL_5_EXECUTIVE_VAULT`), exposing all 4 internal user records!
+     - **When Cloud Armor is Attached (Post-Armor):** Clicking **`Sign In & Enter Next Page`** (or **`Test Inline`**) with `admin' OR '1'='1` is immediately intercepted at the `gcp2-xlb` load balancer edge by **Cloud Armor Priority `2000` (`sqli-v33-stable`)** and blocked with **`HTTP 403 Forbidden`** before the request ever reaches Cloud Run!
+2. **Tab 2 — Search & Feedback Wall (`OWASP XSS WAF Filter` $\rightarrow$ `/search`):**
+   - Click **`🔓 Fill Reflected Script Vector (<script>...)`** and submit.
+   - **Pre-Armor:** Opens `/search` showing the unfiltered XSS detection alert.
+   - **Post-Armor:** Blocked at the edge by **Priority `2000` (`xss-v33-stable`)** with **`HTTP 403 Forbidden`**.
+3. **Tab 3 — File & Ping Utility (`OWASP LFI & RCE WAF Filter` $\rightarrow$ `/viewer`):**
+   - Click **`🔓 Fill LFI Path Traversal (../../../../etc/passwd)`** or **`🔓 Fill RCE Command Chaining (8.8.8.8; cat /etc/passwd)`** and submit.
+   - **Pre-Armor:** Opens `/viewer` showing simulated file exposure.
+   - **Post-Armor:** Blocked at the edge by **Priority `2100` (`lfi-v33-stable` / `rce-v33-stable`)** with **`HTTP 403 Forbidden`**.
+4. **Tab 4 — Admin Diagnostics & Custom CEL Rules (`Priority 1000 & 1100`):**
+   - One-click browser buttons that call `/admin/diagnostics` (without and with `X-Admin-Token: study-secret-2026`) and `/api/inspect` (with `X-Policy-Test: block-me` and `?policy_test=block`) and display the HTTP status and payload right on the page.
+5. **Tab 5 — Interactive Rate-Limiting Burst Simulator (`Priority 3000`):**
+   - Click **`⚡ Fire 18 Rapid Requests to /api/ping`** to watch 18 visual request tiles update live in your browser: in Post-Armor mode, the first 10 tiles turn **green (`HTTP 200 OK`)** and tiles 11–18 turn **red (`HTTP 429 Too Many Requests`)**!
+
 ---
 
 ## 5. Deep Dive into Google Cloud Armor Rules (Concepts + GUI & CLI Configuration)
