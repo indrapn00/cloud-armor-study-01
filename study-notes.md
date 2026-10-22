@@ -76,8 +76,9 @@ Our application source code lives in **[`app/main.py`](./app/main.py)**, **[`app
 
 #### Option B: Via `gcloud` CLI
 ```bash
+# Run from the repository root directory (e.g. cd ~/cloud-armor-study-01)
 gcloud run deploy cloud-armor-demo-service \
-  --source=/usr/local/google/home/indrapn/my_agy/cloud-armor-study-01/app \
+  --source=./app \
   --region=asia-southeast2 \
   --project=gcp-demo-02-307713 \
   --allow-unauthenticated \
@@ -273,8 +274,8 @@ flowchart TD
     Req["Incoming HTTPS Request to<br/>gcp2demo01.iphamsterviel.org"]
     P1000{"Priority 1000 (Custom CEL)<br/>Path starts with /admin AND<br/>missing/invalid x-admin-token?"}
     P1100{"Priority 1100 (Custom CEL)<br/>Header x-policy-test == 'block-me'<br/>OR query contains 'policy_test=block'?"}
-    P2000{"Priority 2000 (OWASP CRS v3.3)<br/>sqli-v33-stable OR xss-v33-stable<br/>(sensitivity: 1)?"}
-    P2100{"Priority 2100 (OWASP CRS v3.3)<br/>lfi-v33-stable OR rce-v33-stable<br/>OR scannerdetection-v33-stable?"}
+    P2000{"Priority 2000 (OWASP CRS v3.3)<br/>sqli-v33-stable (sensitivity: 3) OR<br/>xss-v33-stable (sensitivity: 2)?"}
+    P2100{"Priority 2100 (OWASP CRS v3.3)<br/>lfi, rce, or scannerdetection<br/>(sensitivity: 2)?"}
     P3000{"Priority 3000 (Rate Limit Throttle)<br/>Path starts with /api/ping?"}
     P3000Check{"Client IP <= 10 req / 60s?"}
     Default["Priority 2147483647 (Default Rule)<br/>Action: ALLOW -> Forward to Cloud Run"]
@@ -379,16 +380,16 @@ Cloud Armor supports two rate-limiting actions:
      - **Description:** `Block requests carrying benign policy verification marker in X-Policy-Test header or query parameter`
    - **Rule 3 (Priority `2000` — OWASP CRS SQLi & XSS):**
      - **Condition mode:** `Advanced mode`
-     - **Match:** `evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 1}) || evaluatePreconfiguredWaf('xss-v33-stable', {'sensitivity': 1})`
+     - **Match:** `evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 3}) || evaluatePreconfiguredWaf('xss-v33-stable', {'sensitivity': 2})`
      - **Action:** `Deny` $\rightarrow$ **Response code:** `403 (Forbidden)`
      - **Priority:** `2000`
-     - **Description:** `OWASP ModSecurity CRS v3.3 SQL Injection (sqli-v33-stable) and Cross-Site Scripting (xss-v33-stable)`
+     - **Description:** `Block SQLi (Sensitivity 3) and XSS (Sensitivity 2) using OWASP CRS v3.3 preconfigured WAF rules`
    - **Rule 4 (Priority `2100` — OWASP CRS LFI, RCE & Scanner Detection):**
      - **Condition mode:** `Advanced mode`
-     - **Match:** `evaluatePreconfiguredWaf('lfi-v33-stable', {'sensitivity': 1}) || evaluatePreconfiguredWaf('rce-v33-stable', {'sensitivity': 1}) || evaluatePreconfiguredWaf('scannerdetection-v33-stable', {'sensitivity': 1})`
+     - **Match:** `evaluatePreconfiguredWaf('lfi-v33-stable', {'sensitivity': 2}) || evaluatePreconfiguredWaf('rce-v33-stable', {'sensitivity': 2}) || evaluatePreconfiguredWaf('scannerdetection-v33-stable', {'sensitivity': 2})`
      - **Action:** `Deny` $\rightarrow$ **Response code:** `403 (Forbidden)`
      - **Priority:** `2100`
-     - **Description:** `OWASP ModSecurity CRS v3.3 Local File Inclusion (lfi), Remote Code Execution (rce), and Scanner Detection`
+     - **Description:** `Block LFI, RCE, and Scanner probes using OWASP CRS v3.3 preconfigured WAF rules (Sensitivity 2)`
    - **Rule 5 (Priority `3000` — Rate Limit `/api/ping`):**
      - **Condition mode:** `Advanced mode`
      - **Match:** `request.path.startsWith('/api/ping')`
@@ -436,20 +437,20 @@ gcloud compute security-policies rules create 1100 \
   --description="Block requests carrying benign policy verification marker in X-Policy-Test header or query parameter" \
   --project=gcp-demo-02-307713
 
-# 5. Priority 2000: OWASP CRS SQLi & XSS preconfigured WAF rules
+# 5. Priority 2000: OWASP CRS SQLi (Sensitivity 3) & XSS (Sensitivity 2) preconfigured WAF rules
 gcloud compute security-policies rules create 2000 \
   --security-policy=cloud-armor-study-policy-01 \
   --action=deny-403 \
-  --expression="evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 1}) || evaluatePreconfiguredWaf('xss-v33-stable', {'sensitivity': 1})" \
-  --description="OWASP ModSecurity CRS v3.3 SQL Injection (sqli-v33-stable) and Cross-Site Scripting (xss-v33-stable)" \
+  --expression="evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 3}) || evaluatePreconfiguredWaf('xss-v33-stable', {'sensitivity': 2})" \
+  --description="Block SQLi (Sensitivity 3) and XSS (Sensitivity 2) using OWASP CRS v3.3 preconfigured WAF rules" \
   --project=gcp-demo-02-307713
 
-# 6. Priority 2100: OWASP CRS LFI, RCE & Scanner Detection preconfigured WAF rules
+# 6. Priority 2100: OWASP CRS LFI, RCE & Scanner Detection preconfigured WAF rules (Sensitivity 2)
 gcloud compute security-policies rules create 2100 \
   --security-policy=cloud-armor-study-policy-01 \
   --action=deny-403 \
-  --expression="evaluatePreconfiguredWaf('lfi-v33-stable', {'sensitivity': 1}) || evaluatePreconfiguredWaf('rce-v33-stable', {'sensitivity': 1}) || evaluatePreconfiguredWaf('scannerdetection-v33-stable', {'sensitivity': 1})" \
-  --description="OWASP ModSecurity CRS v3.3 Local File Inclusion (lfi), Remote Code Execution (rce), and Scanner Detection" \
+  --expression="evaluatePreconfiguredWaf('lfi-v33-stable', {'sensitivity': 2}) || evaluatePreconfiguredWaf('rce-v33-stable', {'sensitivity': 2}) || evaluatePreconfiguredWaf('scannerdetection-v33-stable', {'sensitivity': 2})" \
+  --description="Block LFI, RCE, and Scanner probes using OWASP CRS v3.3 preconfigured WAF rules (Sensitivity 2)" \
   --project=gcp-demo-02-307713
 
 # 7. Priority 3000: Rate Limiting / Throttle rule on /api/ping
@@ -689,7 +690,9 @@ Below are 3 verbatim excerpts from **[`logs/cloud_armor_sample_logs.json`](./log
 4. **Step 4 — Delete the Cloud Run Service:**
    - Navigate to **Cloud Run** (`https://console.cloud.google.com/run?project=gcp-demo-02-307713`), select **`cloud-armor-demo-service`** (`asia-southeast2`), and click **Delete**.
 
-#### Option B: Via Automated Cleanup Script / `gcloud` CLI
+#### Option B: Via Automated Cleanup Script or Individual `gcloud` CLI Commands
+
+**Using the automated script (Recommended — dynamically discovers GUI or CLI path matcher names):**
 ```bash
 # Detach & delete only the Cloud Armor policy (keep Cloud Run and XLB route running):
 ./scripts/cleanup_resources.sh --policy-only
@@ -699,6 +702,48 @@ Below are 3 verbatim excerpts from **[`logs/cloud_armor_sample_logs.json`](./log
 
 # To re-provision the entire environment from scratch in one command:
 ./scripts/deploy_all.sh
+```
+
+**Or running individual `gcloud` CLI commands step-by-step:**
+```bash
+# 1. Detach Cloud Armor policy from the backend service
+gcloud compute backend-services update cloud-armor-demo-backend-svc \
+  --global \
+  --security-policy="" \
+  --project=gcp-demo-02-307713
+
+# 2. Delete the Cloud Armor security policy
+gcloud compute security-policies delete cloud-armor-study-policy-01 \
+  --global \
+  --project=gcp-demo-02-307713 \
+  --quiet
+
+# 3. Remove the path matcher for gcp2demo01.iphamsterviel.org from gcp2-xlb
+#    (Note: Use --path-matcher-name=cloud-armor-demo-matcher if created via CLI,
+#     or --path-matcher-name=path-matcher-1 if created via the Google Cloud Console GUI)
+gcloud compute url-maps remove-path-matcher gcp2-xlb \
+  --path-matcher-name=cloud-armor-demo-matcher \
+  --global \
+  --project=gcp-demo-02-307713 \
+  --quiet
+
+# 4. Delete the global Backend Service
+gcloud compute backend-services delete cloud-armor-demo-backend-svc \
+  --global \
+  --project=gcp-demo-02-307713 \
+  --quiet
+
+# 5. Delete the regional Serverless NEG in asia-southeast2
+gcloud compute network-endpoint-groups delete cloud-armor-demo-neg \
+  --region=asia-southeast2 \
+  --project=gcp-demo-02-307713 \
+  --quiet
+
+# 6. Delete the Cloud Run service in asia-southeast2
+gcloud run services delete cloud-armor-demo-service \
+  --region=asia-southeast2 \
+  --project=gcp-demo-02-307713 \
+  --quiet
 ```
 
 > [!NOTE]
