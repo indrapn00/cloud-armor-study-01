@@ -1,7 +1,7 @@
 ================================================================================
  Google Cloud Armor Defensive Study Verification Suite
  Mode                 : post-armor
- Timestamp (UTC)      : 2026-10-22T08:45:25Z
+ Timestamp (UTC)      : 2026-10-22T08:47:01Z
  GCP Project          : gcp-demo-02-307713
  Cloud Run Direct URL : https://cloud-armor-demo-service-66063681189.asia-southeast2.run.app
  XLB Public Endpoint  : https://gcp2demo01.iphamsterviel.org (34.49.218.84)
@@ -29,54 +29,54 @@
 --------------------------------------------------------------------------------
 [TEST 2C-1] SQLi Auth Bypass Login Submission (POST https://gcp2demo01.iphamsterviel.org/login -> admin' OR '1'='1)
   Expected (post-armor) : HTTP 403 (BLOCKED at edge by Cloud Armor OWASP SQLi Rule Priority 2000 sqli-v33-stable)
-  Actual HTTP Status : HTTP 200
-  Response Preview   : <!DOCTYPE html> <html lang="en"> <head>   <meta charset="utf-8" />   <meta name="viewport" content="width=device-width, initial-scale=1" />   <title>Executive Vault Portal — Cloud Armor Study Next Page</title>   <link href="https://fonts.googleapis.com/css2?
+  Actual HTTP Status : HTTP 403
+  Response Preview   : <!doctype html><meta charset="utf-8"><meta name=viewport content="width=device-width, initial-scale=1"><title>403</title>403 Forbidden
 
 --------------------------------------------------------------------------------
 [TEST 2C-2] SQLi Comment Bypass Login Submission (POST https://gcp2demo01.iphamsterviel.org/login -> admin' -- )
   Expected (post-armor) : HTTP 403 (BLOCKED at edge by Cloud Armor OWASP SQLi Rule Priority 2000 sqli-v33-stable)
-  Actual HTTP Status : HTTP 200
-  Response Preview   : <!DOCTYPE html> <html lang="en"> <head>   <meta charset="utf-8" />   <meta name="viewport" content="width=device-width, initial-scale=1" />   <title>Executive Vault Portal — Cloud Armor Study Next Page</title>   <link href="https://fonts.googleapis.com/css2?
+  Actual HTTP Status : HTTP 403
+  Response Preview   : <!doctype html><meta charset="utf-8"><meta name=viewport content="width=device-width, initial-scale=1"><title>403</title>403 Forbidden
 
 --------------------------------------------------------------------------------
 [TEST 2D] Browser Search XSS Test (GET https://gcp2demo01.iphamsterviel.org/search?q=<script>alert(1)</script>)
   Expected (post-armor) : HTTP 403 (BLOCKED at edge by Cloud Armor OWASP XSS Rule Priority 2000 xss-v33-stable)
-  Actual HTTP Status : HTTP 200
-  Response Preview   : <!DOCTYPE html> <html lang="en"> <head>   <meta charset="utf-8" />   <meta name="viewport" content="width=device-width, initial-scale=1" />   <title>Search Results — Cloud Armor XSS Study</title>   <link href="https://fonts.googleapis.com/css2?family=Inter:w
+  Actual HTTP Status : HTTP 403
+  Response Preview   : <!doctype html><meta charset="utf-8"><meta name=viewport content="width=device-width, initial-scale=1"><title>403</title>403 Forbidden
 
 --------------------------------------------------------------------------------
 [TEST 2E] Browser Document Viewer LFI Test (GET https://gcp2demo01.iphamsterviel.org/viewer?doc=../../../../etc/passwd)
   Expected (post-armor) : HTTP 403 (BLOCKED at edge by Cloud Armor OWASP LFI Rule Priority 2100 lfi-v33-stable)
-  Actual HTTP Status : HTTP 200
-  Response Preview   : <!DOCTYPE html> <html lang="en"> <head>   <meta charset="utf-8" />   <meta name="viewport" content="width=device-width, initial-scale=1" />   <title>Document &amp; Ping Viewer — Cloud Armor LFI/RCE Study</title>   <link href="https://fonts.googleapis.com/css
+  Actual HTTP Status : HTTP 403
+  Response Preview   : <!doctype html><meta charset="utf-8"><meta name=viewport content="width=device-width, initial-scale=1"><title>403</title>403 Forbidden
 
 --------------------------------------------------------------------------------
 [TEST 3] Admin Diagnostics WITHOUT Auth Header (GET https://gcp2demo01.iphamsterviel.org/admin/diagnostics)
   Expected (post-armor) : HTTP 403 (BLOCKED at edge by Cloud Armor Custom CEL Rule Priority 1000)
-  Actual HTTP Status : HTTP 200
-  Response Preview   : {"endpoint":"/admin/diagnostics","service":"cloud-armor-demo-service","revision":"cloud-armor-demo-service-00001-mbv","timestamp_utc":"2026-10-22T08:45:26.089003+00:00","admin_token_present":false,"admin_token_valid":false,"security_observation":"EXPOSED_WITHO
+  Actual HTTP Status : HTTP 403
+  Response Preview   : <!doctype html><meta charset="utf-8"><meta name=viewport content="width=device-width, initial-scale=1"><title>403</title>403 Forbidden
 
 --------------------------------------------------------------------------------
 [TEST 4] Admin Diagnostics WITH Valid X-Admin-Token Header (GET https://gcp2demo01.iphamsterviel.org/admin/diagnostics)
   Expected (post-armor) : HTTP 200 (Allowed by Cloud Armor when valid X-Admin-Token is present)
   Actual HTTP Status : HTTP 200
-  Response Preview   : {"endpoint":"/admin/diagnostics","service":"cloud-armor-demo-service","revision":"cloud-armor-demo-service-00001-mbv","timestamp_utc":"2026-10-22T08:45:26.159258+00:00","admin_token_present":true,"admin_token_valid":true,"security_observation":"AUTHORIZED: Val
+  Response Preview   : {"endpoint":"/admin/diagnostics","service":"cloud-armor-demo-service","revision":"cloud-armor-demo-service-00001-mbv","timestamp_utc":"2026-10-22T08:47:02.788649+00:00","admin_token_present":true,"admin_token_valid":true,"security_observation":"AUTHORIZED: Val
 
 --------------------------------------------------------------------------------
 [TEST 5A] Inspect Endpoint WITH Benign Test Header 'X-Policy-Test: block-me'
   Expected (post-armor) : HTTP 403 (BLOCKED at edge by Cloud Armor Custom CEL Rule Priority 1100)
-  Actual HTTP Status : HTTP 200
-  Response Preview   : {"endpoint":"/api/inspect","service":"cloud-armor-demo-service","timestamp_utc":"2026-10-22T08:45:26.280486+00:00","policy_marker_detected_at_origin":true,"security_observation":"UNFILTERED_AT_EDGE: Request carrying policy test marker reached the Cloud Run ori
+  Actual HTTP Status : HTTP 403
+  Response Preview   : <!doctype html><meta charset="utf-8"><meta name=viewport content="width=device-width, initial-scale=1"><title>403</title>403 Forbidden
 
 --------------------------------------------------------------------------------
 [TEST 5B] Inspect Endpoint WITH Benign Test Query '?policy_test=block'
   Expected (post-armor) : HTTP 403 (BLOCKED at edge by Cloud Armor Custom CEL Rule Priority 1100)
-  Actual HTTP Status : HTTP 200
-  Response Preview   : {"endpoint":"/api/inspect","service":"cloud-armor-demo-service","timestamp_utc":"2026-10-22T08:45:26.394630+00:00","policy_marker_detected_at_origin":true,"security_observation":"UNFILTERED_AT_EDGE: Request carrying policy test marker reached the Cloud Run ori
+  Actual HTTP Status : HTTP 403
+  Response Preview   : <!doctype html><meta charset="utf-8"><meta name=viewport content="width=device-width, initial-scale=1"><title>403</title>403 Forbidden
 
 --------------------------------------------------------------------------------
 [TEST 6] Rapid Burst Rate-Limit Check (18 requests to https://gcp2demo01.iphamsterviel.org/api/ping)
   Expected (post-armor) : First <=10 requests HTTP 200, excess requests throttled with HTTP 429 (Rule Priority 3000)
-  Status Sequence    : 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200
-  Burst Summary      : HTTP 200 = 18/18 | Throttled (HTTP 429) = 0/18 | Other = 0/18
+  Status Sequence    : 200 200 200 200 200 200 200 200 429 429 429 429 429 429 429 429 429 429
+  Burst Summary      : HTTP 200 = 8/18 | Throttled (HTTP 429) = 10/18 | Other = 0/18
 ================================================================================
