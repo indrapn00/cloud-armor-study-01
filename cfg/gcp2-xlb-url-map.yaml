@@ -1,6 +1,6 @@
 creationTimestamp: '2025-06-04T21:02:50.905-07:00'
 defaultService: https://www.googleapis.com/compute/v1/projects/gcp-demo-02-307713/global/backendServices/private-gcs-bucket-backend-service-01
-fingerprint: tqMKsrOySaU=
+fingerprint: Ji3Q6PQ9zTg=
 hostRules:
 - hosts:
   - gcp2demo.iphamsterviel.org
@@ -14,14 +14,6 @@ name: gcp2-xlb
 pathMatchers:
 - defaultService: https://www.googleapis.com/compute/v1/projects/gcp-demo-02-307713/global/backendServices/internet-neg-backend
   name: matcher1
-  routeRules:
-  - matchRules:
-    - prefixMatch: /ge
-    priority: 100
-    urlRedirect:
-      hostRedirect: vertexaisearch.cloud.google.com
-      pathRedirect: /home/cid/c0edd134-2117-4619-9ea9-c8cbd5ae2a54
-      redirectResponseCode: FOUND
 - defaultService: https://www.googleapis.com/compute/v1/projects/gcp-demo-02-307713/global/backendServices/cloud-armor-demo-backend-svc
   name: cloud-armor-demo-matcher
 selfLink: https://www.googleapis.com/compute/v1/projects/gcp-demo-02-307713/global/urlMaps/gcp2-xlb

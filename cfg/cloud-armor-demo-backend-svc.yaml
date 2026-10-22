@@ -5,11 +5,11 @@ backends:
   group: https://www.googleapis.com/compute/v1/projects/gcp-demo-02-307713/regions/asia-southeast2/networkEndpointGroups/cloud-armor-demo-neg
 connectionDraining:
   drainingTimeoutSec: 0
-creationTimestamp: '2026-10-21T21:20:12.624-07:00'
+creationTimestamp: '2026-10-22T01:39:14.818-07:00'
 description: ''
 enableCDN: false
-fingerprint: -iIOdXp1Hnc=
-id: '11342912872001555'
+fingerprint: OdBgUsSJaFY=
+id: '7841856304014718301'
 kind: compute#backendService
 loadBalancingScheme: EXTERNAL_MANAGED
 logConfig:

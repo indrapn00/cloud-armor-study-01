@@ -1,11 +1,11 @@
 advancedOptionsConfig:
   jsonParsing: STANDARD
   logLevel: VERBOSE
-creationTimestamp: '2026-10-21T21:16:40.202-07:00'
+creationTimestamp: '2026-10-22T01:41:26.777-07:00'
 description: Google Cloud Armor Defensive Study Policy (OWASP CRS v3.3 WAF, Custom
   CEL access/marker rules, and Rate Limiting)
-fingerprint: w4K_kkzrQJE=
-id: '699990130797326535'
+fingerprint: Hsg-xQ470ng=
+id: '4753653420940096217'
 kind: compute#securityPolicy
 labelFingerprint: 42WmSpB8rSM=
 name: cloud-armor-study-policy-01

@@ -1,7 +1,7 @@
 ================================================================================
  Google Cloud Armor Defensive Study Verification Suite
  Mode                 : post-armor
- Timestamp (UTC)      : 2026-10-22T08:43:54Z
+ Timestamp (UTC)      : 2026-10-22T08:44:14Z
  GCP Project          : gcp-demo-02-307713
  Cloud Run Direct URL : https://cloud-armor-demo-service-66063681189.asia-southeast2.run.app
  XLB Public Endpoint  : https://gcp2demo01.iphamsterviel.org (34.49.218.84)
@@ -54,25 +54,25 @@
 [TEST 3] Admin Diagnostics WITHOUT Auth Header (GET https://gcp2demo01.iphamsterviel.org/admin/diagnostics)
   Expected (post-armor) : HTTP 403 (BLOCKED at edge by Cloud Armor Custom CEL Rule Priority 1000)
   Actual HTTP Status : HTTP 200
-  Response Preview   : {"endpoint":"/admin/diagnostics","service":"cloud-armor-demo-service","revision":"cloud-armor-demo-service-00001-mbv","timestamp_utc":"2026-10-22T08:43:55.455926+00:00","admin_token_present":false,"admin_token_valid":false,"security_observation":"EXPOSED_WITHO
+  Response Preview   : {"endpoint":"/admin/diagnostics","service":"cloud-armor-demo-service","revision":"cloud-armor-demo-service-00001-mbv","timestamp_utc":"2026-10-22T08:44:15.082702+00:00","admin_token_present":false,"admin_token_valid":false,"security_observation":"EXPOSED_WITHO
 
 --------------------------------------------------------------------------------
 [TEST 4] Admin Diagnostics WITH Valid X-Admin-Token Header (GET https://gcp2demo01.iphamsterviel.org/admin/diagnostics)
   Expected (post-armor) : HTTP 200 (Allowed by Cloud Armor when valid X-Admin-Token is present)
   Actual HTTP Status : HTTP 200
-  Response Preview   : {"endpoint":"/admin/diagnostics","service":"cloud-armor-demo-service","revision":"cloud-armor-demo-service-00001-mbv","timestamp_utc":"2026-10-22T08:43:55.529250+00:00","admin_token_present":true,"admin_token_valid":true,"security_observation":"AUTHORIZED: Val
+  Response Preview   : {"endpoint":"/admin/diagnostics","service":"cloud-armor-demo-service","revision":"cloud-armor-demo-service-00001-mbv","timestamp_utc":"2026-10-22T08:44:15.154461+00:00","admin_token_present":true,"admin_token_valid":true,"security_observation":"AUTHORIZED: Val
 
 --------------------------------------------------------------------------------
 [TEST 5A] Inspect Endpoint WITH Benign Test Header 'X-Policy-Test: block-me'
   Expected (post-armor) : HTTP 403 (BLOCKED at edge by Cloud Armor Custom CEL Rule Priority 1100)
   Actual HTTP Status : HTTP 200
-  Response Preview   : {"endpoint":"/api/inspect","service":"cloud-armor-demo-service","timestamp_utc":"2026-10-22T08:43:55.598427+00:00","policy_marker_detected_at_origin":true,"security_observation":"UNFILTERED_AT_EDGE: Request carrying policy test marker reached the Cloud Run ori
+  Response Preview   : {"endpoint":"/api/inspect","service":"cloud-armor-demo-service","timestamp_utc":"2026-10-22T08:44:15.225044+00:00","policy_marker_detected_at_origin":true,"security_observation":"UNFILTERED_AT_EDGE: Request carrying policy test marker reached the Cloud Run ori
 
 --------------------------------------------------------------------------------
 [TEST 5B] Inspect Endpoint WITH Benign Test Query '?policy_test=block'
   Expected (post-armor) : HTTP 403 (BLOCKED at edge by Cloud Armor Custom CEL Rule Priority 1100)
   Actual HTTP Status : HTTP 200
-  Response Preview   : {"endpoint":"/api/inspect","service":"cloud-armor-demo-service","timestamp_utc":"2026-10-22T08:43:55.726804+00:00","policy_marker_detected_at_origin":true,"security_observation":"UNFILTERED_AT_EDGE: Request carrying policy test marker reached the Cloud Run ori
+  Response Preview   : {"endpoint":"/api/inspect","service":"cloud-armor-demo-service","timestamp_utc":"2026-10-22T08:44:15.293395+00:00","policy_marker_detected_at_origin":true,"security_observation":"UNFILTERED_AT_EDGE: Request carrying policy test marker reached the Cloud Run ori
 
 --------------------------------------------------------------------------------
 [TEST 6] Rapid Burst Rate-Limit Check (18 requests to https://gcp2demo01.iphamsterviel.org/api/ping)
