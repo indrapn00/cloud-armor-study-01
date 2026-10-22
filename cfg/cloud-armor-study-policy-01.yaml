@@ -1,0 +1,82 @@
+---
+advancedOptionsConfig:
+  jsonParsing: STANDARD
+  logLevel: VERBOSE
+creationTimestamp: '2026-10-21T21:16:40.202-07:00'
+description: Google Cloud Armor Defensive Study Policy (OWASP CRS v3.3 WAF, Custom
+  CEL access/marker rules, and Rate Limiting)
+fingerprint: gPuWBtie5og=
+id: '699990130797326535'
+kind: compute#securityPolicy
+labelFingerprint: 42WmSpB8rSM=
+name: cloud-armor-study-policy-01
+rules:
+- action: deny(403)
+  description: Block unauthorized access to /admin endpoints unless valid X-Admin-Token
+    header is provided
+  kind: compute#securityPolicyRule
+  match:
+    expr:
+      expression: request.path.startsWith('/admin') && (!has(request.headers['x-admin-token'])
+        || request.headers['x-admin-token'] != 'study-secret-2026')
+  preview: false
+  priority: 1000
+- action: deny(403)
+  description: Block requests carrying benign policy verification marker in X-Policy-Test
+    header or query parameter
+  kind: compute#securityPolicyRule
+  match:
+    expr:
+      expression: (has(request.headers['x-policy-test']) && request.headers['x-policy-test']
+        == 'block-me') || request.query.contains('policy_test=block')
+  preview: false
+  priority: 1100
+- action: deny(403)
+  description: OWASP ModSecurity CRS v3.3 SQL Injection (sqli-v33-stable) and Cross-Site
+    Scripting (xss-v33-stable)
+  kind: compute#securityPolicyRule
+  match:
+    expr:
+      expression: "evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 1})\
+        \ || evaluatePreconfiguredWaf('xss-v33-stable', {'sensitivity': 1})"
+  preview: false
+  priority: 2000
+- action: deny(403)
+  description: OWASP ModSecurity CRS v3.3 Local File Inclusion (lfi), Remote Code
+    Execution (rce), and Scanner Detection
+  kind: compute#securityPolicyRule
+  match:
+    expr:
+      expression: "evaluatePreconfiguredWaf('lfi-v33-stable', {'sensitivity': 1})\
+        \ || evaluatePreconfiguredWaf('rce-v33-stable', {'sensitivity': 1}) || evaluatePreconfiguredWaf('scannerdetection-v33-stable',\
+        \ {'sensitivity': 1})"
+  preview: false
+  priority: 2100
+- action: allow
+  description: default rule
+  kind: compute#securityPolicyRule
+  match:
+    config:
+      srcIpRanges:
+      - '*'
+    versionedExpr: SRC_IPS_V1
+  preview: false
+  priority: 2147483647
+- action: throttle
+  description: Rate limit /api/ping to 10 requests per 60 seconds per client IP (exceed
+    returns HTTP 429)
+  kind: compute#securityPolicyRule
+  match:
+    expr:
+      expression: request.path.startsWith('/api/ping')
+  preview: false
+  priority: 3000
+  rateLimitOptions:
+    conformAction: allow
+    enforceOnKey: IP
+    exceedAction: deny(429)
+    rateLimitThreshold:
+      count: 10
+      intervalSec: 60
+selfLink: https://www.googleapis.com/compute/v1/projects/gcp-demo-02-307713/global/securityPolicies/cloud-armor-study-policy-01
+type: CLOUD_ARMOR

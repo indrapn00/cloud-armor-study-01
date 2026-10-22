@@ -1,0 +1,28 @@
+affinityCookieTtlSec: 0
+backends:
+- balancingMode: UTILIZATION
+  capacityScaler: 1.0
+  group: https://www.googleapis.com/compute/v1/projects/gcp-demo-02-307713/regions/asia-southeast2/networkEndpointGroups/cloud-armor-demo-neg
+connectionDraining:
+  drainingTimeoutSec: 0
+creationTimestamp: '2026-10-21T21:20:12.624-07:00'
+description: ''
+enableCDN: false
+fingerprint: -iIOdXp1Hnc=
+id: '11342912872001555'
+kind: compute#backendService
+loadBalancingScheme: EXTERNAL_MANAGED
+logConfig:
+  enable: true
+  optionalMode: INCLUDE_ALL_OPTIONAL
+  sampleRate: 1.0
+name: cloud-armor-demo-backend-svc
+port: 80
+portName: http
+protocol: HTTP
+securityPolicy: https://www.googleapis.com/compute/v1/projects/gcp-demo-02-307713/global/securityPolicies/cloud-armor-study-policy-01
+selfLink: https://www.googleapis.com/compute/v1/projects/gcp-demo-02-307713/global/backendServices/cloud-armor-demo-backend-svc
+sessionAffinity: NONE
+timeoutSec: 30
+usedBy:
+- reference: https://www.googleapis.com/compute/v1/projects/gcp-demo-02-307713/global/urlMaps/gcp2-xlb

@@ -1,0 +1,305 @@
+[
+  {
+    "httpRequest": {
+      "latency": "0.117249s",
+      "protocol": "h2",
+      "remoteIp": "34.142.144.225",
+      "requestMethod": "GET",
+      "requestSize": "54",
+      "requestUrl": "https://gcp2demo01.iphamsterviel.org/admin/diagnostics",
+      "responseSize": "260",
+      "status": 403,
+      "userAgent": "curl/8.22.0"
+    },
+    "insertId": "8dmewpfh6grkq",
+    "jsonPayload": {
+      "@type": "type.googleapis.com/google.cloud.loadbalancing.type.LoadBalancerLogEntry",
+      "backendTargetProjectNumber": "projects/66063681189",
+      "cacheDecision": [
+        "RESPONSE_HAS_CONTENT_TYPE",
+        "CACHE_MODE_USE_ORIGIN_HEADERS"
+      ],
+      "enforcedSecurityPolicy": {
+        "configuredAction": "DENY",
+        "name": "cloud-armor-study-policy-01",
+        "outcome": "DENY",
+        "priority": 1000
+      },
+      "remoteIp": "34.142.144.225",
+      "securityPolicyRequestData": {
+        "remoteIpInfo": {
+          "asn": 15169,
+          "regionCode": "SG"
+        },
+        "tlsJa3Fingerprint": "7a73fb0bdeaa2a79fadf356c34e7577e",
+        "tlsJa4Fingerprint": "t13d3013h2_1d37bd780c83_8537cf56674e"
+      },
+      "statusDetails": "denied_by_security_policy",
+      "tls": {
+        "cipher": "TLS_AES_256_GCM_SHA384",
+        "protocol": "TLSv1.3"
+      }
+    },
+    "logName": "projects/gcp-demo-02-307713/logs/requests",
+    "receiveTimestamp": "2026-10-22T04:32:18.030123308Z",
+    "resource": {
+      "labels": {
+        "backend_service_name": "cloud-armor-demo-backend-svc",
+        "forwarding_rule_name": "gcp2-xlb-fr",
+        "project_id": "gcp-demo-02-307713",
+        "target_proxy_name": "gcp2-xlb-target-proxy",
+        "url_map_name": "gcp2-xlb",
+        "zone": "global"
+      },
+      "type": "http_load_balancer"
+    },
+    "severity": "WARNING",
+    "spanId": "1d6e9b265bc5221e",
+    "timestamp": "2026-10-22T04:32:17.223746Z",
+    "trace": "projects/gcp-demo-02-307713/traces/efe4e5dde953aa9f4fbe65b62dc0b6c2"
+  },
+  {
+    "httpRequest": {
+      "latency": "0.118145s",
+      "protocol": "h2",
+      "remoteIp": "34.142.144.225",
+      "requestMethod": "GET",
+      "requestSize": "63",
+      "requestUrl": "https://gcp2demo01.iphamsterviel.org/api/inspect?policy_test=block",
+      "responseSize": "260",
+      "status": 403,
+      "userAgent": "curl/8.22.0"
+    },
+    "insertId": "1o8h2hdffsdk52",
+    "jsonPayload": {
+      "@type": "type.googleapis.com/google.cloud.loadbalancing.type.LoadBalancerLogEntry",
+      "backendTargetProjectNumber": "projects/66063681189",
+      "cacheDecision": [
+        "RESPONSE_HAS_CONTENT_TYPE",
+        "CACHE_MODE_USE_ORIGIN_HEADERS"
+      ],
+      "enforcedSecurityPolicy": {
+        "configuredAction": "DENY",
+        "name": "cloud-armor-study-policy-01",
+        "outcome": "DENY",
+        "priority": 1100
+      },
+      "remoteIp": "34.142.144.225",
+      "securityPolicyRequestData": {
+        "remoteIpInfo": {
+          "asn": 15169,
+          "regionCode": "SG"
+        },
+        "tlsJa3Fingerprint": "7a73fb0bdeaa2a79fadf356c34e7577e",
+        "tlsJa4Fingerprint": "t13d3013h2_1d37bd780c83_8537cf56674e"
+      },
+      "statusDetails": "denied_by_security_policy",
+      "tls": {
+        "cipher": "TLS_AES_256_GCM_SHA384",
+        "protocol": "TLSv1.3"
+      }
+    },
+    "logName": "projects/gcp-demo-02-307713/logs/requests",
+    "receiveTimestamp": "2026-10-22T04:32:18.480202420Z",
+    "resource": {
+      "labels": {
+        "backend_service_name": "cloud-armor-demo-backend-svc",
+        "forwarding_rule_name": "gcp2-xlb-fr",
+        "project_id": "gcp-demo-02-307713",
+        "target_proxy_name": "gcp2-xlb-target-proxy",
+        "url_map_name": "gcp2-xlb",
+        "zone": "global"
+      },
+      "type": "http_load_balancer"
+    },
+    "severity": "WARNING",
+    "spanId": "ca81165e1aa3da18",
+    "timestamp": "2026-10-22T04:32:17.656972Z",
+    "trace": "projects/gcp-demo-02-307713/traces/d819f7ea7c50a32c890d681c9269967d"
+  },
+  {
+    "httpRequest": {
+      "latency": "0.118232s",
+      "protocol": "h2",
+      "remoteIp": "34.142.144.225",
+      "requestMethod": "GET",
+      "requestSize": "48",
+      "requestUrl": "https://gcp2demo01.iphamsterviel.org/api/ping",
+      "responseSize": "267",
+      "status": 429,
+      "userAgent": "curl/8.22.0"
+    },
+    "insertId": "1x3a8ugf90v8ov",
+    "jsonPayload": {
+      "@type": "type.googleapis.com/google.cloud.loadbalancing.type.LoadBalancerLogEntry",
+      "backendTargetProjectNumber": "projects/66063681189",
+      "cacheDecision": [
+        "RESPONSE_HAS_CONTENT_TYPE",
+        "CACHE_MODE_USE_ORIGIN_HEADERS"
+      ],
+      "enforcedSecurityPolicy": {
+        "configuredAction": "THROTTLE",
+        "name": "cloud-armor-study-policy-01",
+        "outcome": "DENY",
+        "priority": 3000,
+        "rateLimitAction": {
+          "key": "34.142.144.225",
+          "outcome": "RATE_LIMIT_THRESHOLD_EXCEED"
+        }
+      },
+      "remoteIp": "34.142.144.225",
+      "securityPolicyRequestData": {
+        "remoteIpInfo": {
+          "asn": 15169,
+          "regionCode": "SG"
+        },
+        "tlsJa3Fingerprint": "7a73fb0bdeaa2a79fadf356c34e7577e",
+        "tlsJa4Fingerprint": "t13d3013h2_1d37bd780c83_8537cf56674e"
+      },
+      "statusDetails": "denied_by_security_policy",
+      "tls": {
+        "cipher": "TLS_AES_256_GCM_SHA384",
+        "protocol": "TLSv1.3"
+      }
+    },
+    "logName": "projects/gcp-demo-02-307713/logs/requests",
+    "receiveTimestamp": "2026-10-22T04:32:21.231901062Z",
+    "resource": {
+      "labels": {
+        "backend_service_name": "cloud-armor-demo-backend-svc",
+        "forwarding_rule_name": "gcp2-xlb-fr",
+        "project_id": "gcp-demo-02-307713",
+        "target_proxy_name": "gcp2-xlb-target-proxy",
+        "url_map_name": "gcp2-xlb",
+        "zone": "global"
+      },
+      "type": "http_load_balancer"
+    },
+    "severity": "WARNING",
+    "spanId": "9a8b933376c40b15",
+    "timestamp": "2026-10-22T04:32:20.288340Z",
+    "trace": "projects/gcp-demo-02-307713/traces/58f12cd02ee6fd27135fb3378b465111"
+  },
+  {
+    "httpRequest": {
+      "latency": "0.063243s",
+      "protocol": "h2",
+      "remoteIp": "34.142.144.225",
+      "requestMethod": "GET",
+      "requestSize": "48",
+      "requestUrl": "https://gcp2demo01.iphamsterviel.org/api/ping",
+      "responseSize": "474",
+      "status": 200,
+      "userAgent": "curl/8.22.0"
+    },
+    "insertId": "1oi44kgf1bskcv",
+    "jsonPayload": {
+      "@type": "type.googleapis.com/google.cloud.loadbalancing.type.LoadBalancerLogEntry",
+      "backendTargetProjectNumber": "projects/66063681189",
+      "cacheDecision": [
+        "RESPONSE_HAS_CONTENT_TYPE",
+        "CACHE_MODE_USE_ORIGIN_HEADERS"
+      ],
+      "enforcedSecurityPolicy": {
+        "configuredAction": "THROTTLE",
+        "name": "cloud-armor-study-policy-01",
+        "outcome": "ACCEPT",
+        "priority": 3000,
+        "rateLimitAction": {
+          "key": "34.142.144.225",
+          "outcome": "RATE_LIMIT_THRESHOLD_CONFORM"
+        }
+      },
+      "remoteIp": "34.142.144.225",
+      "securityPolicyRequestData": {
+        "remoteIpInfo": {
+          "asn": 15169,
+          "regionCode": "SG"
+        },
+        "tlsJa3Fingerprint": "7a73fb0bdeaa2a79fadf356c34e7577e",
+        "tlsJa4Fingerprint": "t13d3013h2_1d37bd780c83_8537cf56674e"
+      },
+      "statusDetails": "response_sent_by_backend",
+      "tls": {
+        "cipher": "TLS_AES_256_GCM_SHA384",
+        "protocol": "TLSv1.3"
+      }
+    },
+    "logName": "projects/gcp-demo-02-307713/logs/requests",
+    "receiveTimestamp": "2026-10-22T04:32:19.259771781Z",
+    "resource": {
+      "labels": {
+        "backend_service_name": "cloud-armor-demo-backend-svc",
+        "forwarding_rule_name": "gcp2-xlb-fr",
+        "project_id": "gcp-demo-02-307713",
+        "target_proxy_name": "gcp2-xlb-target-proxy",
+        "url_map_name": "gcp2-xlb",
+        "zone": "global"
+      },
+      "type": "http_load_balancer"
+    },
+    "severity": "INFO",
+    "spanId": "c138f7f6271d3c71",
+    "timestamp": "2026-10-22T04:32:18.271804Z",
+    "trace": "projects/gcp-demo-02-307713/traces/3231106797cca4b7b7aae58f06c97495"
+  },
+  {
+    "httpRequest": {
+      "latency": "0.023635s",
+      "protocol": "h2",
+      "remoteIp": "34.142.144.225",
+      "requestMethod": "GET",
+      "requestSize": "79",
+      "requestUrl": "https://gcp2demo01.iphamsterviel.org/admin/diagnostics",
+      "responseSize": "1113",
+      "status": 200,
+      "userAgent": "curl/8.22.0"
+    },
+    "insertId": "ajl9mef4h3n2a",
+    "jsonPayload": {
+      "@type": "type.googleapis.com/google.cloud.loadbalancing.type.LoadBalancerLogEntry",
+      "backendTargetProjectNumber": "projects/66063681189",
+      "cacheDecision": [
+        "RESPONSE_HAS_CONTENT_TYPE",
+        "CACHE_MODE_USE_ORIGIN_HEADERS"
+      ],
+      "enforcedSecurityPolicy": {
+        "configuredAction": "ALLOW",
+        "name": "cloud-armor-study-policy-01",
+        "outcome": "ACCEPT",
+        "priority": 2147483647
+      },
+      "remoteIp": "34.142.144.225",
+      "securityPolicyRequestData": {
+        "remoteIpInfo": {
+          "asn": 15169,
+          "regionCode": "SG"
+        },
+        "tlsJa3Fingerprint": "7a73fb0bdeaa2a79fadf356c34e7577e",
+        "tlsJa4Fingerprint": "t13d3013h2_1d37bd780c83_8537cf56674e"
+      },
+      "statusDetails": "response_sent_by_backend",
+      "tls": {
+        "cipher": "TLS_AES_256_GCM_SHA384",
+        "protocol": "TLSv1.3"
+      }
+    },
+    "logName": "projects/gcp-demo-02-307713/logs/requests",
+    "receiveTimestamp": "2026-10-22T04:32:18.203738399Z",
+    "resource": {
+      "labels": {
+        "backend_service_name": "cloud-armor-demo-backend-svc",
+        "forwarding_rule_name": "gcp2-xlb-fr",
+        "project_id": "gcp-demo-02-307713",
+        "target_proxy_name": "gcp2-xlb-target-proxy",
+        "url_map_name": "gcp2-xlb",
+        "zone": "global"
+      },
+      "type": "http_load_balancer"
+    },
+    "severity": "INFO",
+    "spanId": "365dbcb17890f1da",
+    "timestamp": "2026-10-22T04:32:17.386673Z",
+    "trace": "projects/gcp-demo-02-307713/traces/a8a53062528cc80915acd76e9aec54ac"
+  }
+]

@@ -1,0 +1,52 @@
+================================================================================
+ Google Cloud Armor Defensive Study Verification Suite
+ Mode                 : post-armor
+ Timestamp (UTC)      : 2026-10-22T04:32:16Z
+ GCP Project          : gcp-demo-02-307713
+ Cloud Run Direct URL : https://cloud-armor-demo-service-66063681189.asia-southeast2.run.app
+ XLB Public Endpoint  : https://gcp2demo01.iphamsterviel.org (34.49.218.84)
+ Security Policy      : cloud-armor-study-policy-01
+================================================================================
+
+--------------------------------------------------------------------------------
+[TEST 1] Direct Cloud Run Default URL (https://cloud-armor-demo-service-66063681189.asia-southeast2.run.app/)
+  Expected (post-armor) : HTTP 403/404 (Blocked by Cloud Run internal-and-cloud-load-balancing ingress; GFE returns 404 on internal-route Cloudtop)
+  Actual HTTP Status : HTTP 404
+  Response Preview   :  <html><head> <meta http-equiv="content-type" content="text/html;charset=utf-8"> <title>404 Not Found</title> </head> <body text=#000000 bgcolor=#ffffff> <h1>Error: Not Found</h1> <h2>The requested URL <code>/</code> was not found on this server.</h2> <h2></h2
+
+--------------------------------------------------------------------------------
+[TEST 2] Baseline Public Endpoint (GET https://gcp2demo01.iphamsterviel.org/)
+  Expected (post-armor) : HTTP 200 (Allowed via gcp2-xlb)
+  Actual HTTP Status : HTTP 200
+  Response Preview   : {"service":"cloud-armor-demo-service","revision":"cloud-armor-demo-service-00001-jfz","project":"gcp-demo-02-307713","region":"asia-southeast2","status":"ok","timestamp_utc":"2026-10-22T04:32:17.168778+00:00","message":"Baseline request succeeded through Exter
+
+--------------------------------------------------------------------------------
+[TEST 3] Admin Diagnostics WITHOUT Auth Header (GET https://gcp2demo01.iphamsterviel.org/admin/diagnostics)
+  Expected (post-armor) : HTTP 403 (BLOCKED at edge by Cloud Armor Custom CEL Rule Priority 1000)
+  Actual HTTP Status : HTTP 403
+  Response Preview   : <!doctype html><meta charset="utf-8"><meta name=viewport content="width=device-width, initial-scale=1"><title>403</title>403 Forbidden
+
+--------------------------------------------------------------------------------
+[TEST 4] Admin Diagnostics WITH Valid X-Admin-Token Header (GET https://gcp2demo01.iphamsterviel.org/admin/diagnostics)
+  Expected (post-armor) : HTTP 200 (Allowed by Cloud Armor when valid X-Admin-Token is present)
+  Actual HTTP Status : HTTP 200
+  Response Preview   : {"endpoint":"/admin/diagnostics","service":"cloud-armor-demo-service","revision":"cloud-armor-demo-service-00001-jfz","timestamp_utc":"2026-10-22T04:32:17.402288+00:00","admin_token_present":true,"admin_token_valid":true,"security_observation":"AUTHORIZED: Val
+
+--------------------------------------------------------------------------------
+[TEST 5A] Inspect Endpoint WITH Benign Test Header 'X-Policy-Test: block-me'
+  Expected (post-armor) : HTTP 403 (BLOCKED at edge by Cloud Armor Custom CEL Rule Priority 1100)
+  Actual HTTP Status : HTTP 403
+  Response Preview   : <!doctype html><meta charset="utf-8"><meta name=viewport content="width=device-width, initial-scale=1"><title>403</title>403 Forbidden
+
+--------------------------------------------------------------------------------
+[TEST 5B] Inspect Endpoint WITH Benign Test Query '?policy_test=block'
+  Expected (post-armor) : HTTP 403 (BLOCKED at edge by Cloud Armor Custom CEL Rule Priority 1100)
+  Actual HTTP Status : HTTP 403
+  Response Preview   : <!doctype html><meta charset="utf-8"><meta name=viewport content="width=device-width, initial-scale=1"><title>403</title>403 Forbidden
+
+--------------------------------------------------------------------------------
+[TEST 6] Rapid Burst Rate-Limit Check (18 requests to https://gcp2demo01.iphamsterviel.org/api/ping)
+  Expected (post-armor) : First <=10 requests HTTP 200, excess requests throttled with HTTP 429 (Rule Priority 3000)
+  Status Sequence    : 200 200 200 200 200 200 429 429 429 429 429 429 429 429 429 429 429 429
+  Burst Summary      : HTTP 200 = 6/18 | Throttled (HTTP 429) = 12/18 | Other = 0/18
+================================================================================
