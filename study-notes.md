@@ -129,7 +129,7 @@ gcloud compute network-endpoint-groups create cloud-armor-demo-neg \
   --project=gcp-demo-02-307713
 
 # 2. Create the global Backend Service (IMPORTANT: do NOT pass --protocol=HTTPS,
-#    because gcloud auto-populates portName=https which Serverless NEGs reject!)
+#    because gcloud auto-populates portName=https which Serverless NEGs reject)
 gcloud compute backend-services create cloud-armor-demo-backend-svc \
   --load-balancing-scheme=EXTERNAL_MANAGED \
   --enable-logging \
@@ -422,10 +422,11 @@ gcloud compute security-policies update cloud-armor-study-policy-01 \
   --project=gcp-demo-02-307713
 
 # 3. Priority 1000: Custom CEL rule protecting /admin/diagnostics
+#    (Single quotes around --expression='...' prevent bash history expansion on '!has')
 gcloud compute security-policies rules create 1000 \
   --security-policy=cloud-armor-study-policy-01 \
   --action=deny-403 \
-  --expression="request.path.startsWith('/admin') && (!has(request.headers['x-admin-token']) || request.headers['x-admin-token'] != 'study-secret-2026')" \
+  --expression='request.path.startsWith("/admin") && (!has(request.headers["x-admin-token"]) || request.headers["x-admin-token"] != "study-secret-2026")' \
   --description="Block unauthorized access to /admin endpoints unless valid X-Admin-Token header is provided" \
   --project=gcp-demo-02-307713
 

@@ -96,7 +96,7 @@ if ! gcloud compute security-policies describe "${SECURITY_POLICY_NAME}" --globa
   gcloud compute security-policies rules create 1000 \
     --security-policy="${SECURITY_POLICY_NAME}" \
     --action=deny-403 \
-    --expression="request.path.startsWith('/admin') && (!has(request.headers['x-admin-token']) || request.headers['x-admin-token'] != 'study-secret-2026')" \
+    --expression='request.path.startsWith("/admin") && (!has(request.headers["x-admin-token"]) || request.headers["x-admin-token"] != "study-secret-2026")' \
     --description="Block unauthorized access to /admin endpoints unless valid X-Admin-Token header is provided" \
     --project="${PROJECT_ID}"
 
