@@ -28,6 +28,7 @@ Browser & API Endpoints:
   - GET  /api/vpc/network-info: Inspects Cloud Run container network interfaces (ip addr) & routing table
 """
 
+import asyncio
 from datetime import datetime, timezone
 import html
 import ipaddress
@@ -2338,9 +2339,10 @@ async def vpc_test_page(request: Request) -> HTMLResponse:
 @app.get("/api/vpc/network-info")
 async def api_vpc_network_info() -> JSONResponse:
     """Returns the Cloud Run container's active network interfaces and routing table."""
+    info = await asyncio.to_thread(_get_container_network_info)
     return JSONResponse(
         status_code=200,
-        content=_get_container_network_info(),
+        content=info,
     )
 
 
@@ -2380,11 +2382,12 @@ async def api_vpc_ping(request: Request) -> JSONResponse:
     if not parsed.get("valid"):
         return JSONResponse(status_code=400, content=parsed)
 
-    result = _execute_vpc_ping(
-        host=parsed["host"],
-        port=parsed["port"],
-        count=int(count) if str(count).isdigit() else 3,
-        timeout_sec=int(timeout_sec) if str(timeout_sec).isdigit() else 2,
+    result = await asyncio.to_thread(
+        _execute_vpc_ping,
+        parsed["host"],
+        parsed["port"],
+        int(count) if str(count).isdigit() else 3,
+        int(timeout_sec) if str(timeout_sec).isdigit() else 2,
     )
     result["target_classification"] = parsed["classification"]
     result["is_private_vpc"] = parsed["is_private_vpc"]
@@ -2415,12 +2418,13 @@ async def api_vpc_curl(request: Request) -> JSONResponse:
     if not parsed.get("valid"):
         return JSONResponse(status_code=400, content=parsed)
 
-    result = _execute_vpc_curl(
-        scheme=parsed["scheme"],
-        host=parsed["host"],
-        port=parsed["port"],
-        path=parsed["path"],
-        timeout_sec=int(timeout_sec) if str(timeout_sec).isdigit() else 4,
+    result = await asyncio.to_thread(
+        _execute_vpc_curl,
+        parsed["scheme"],
+        parsed["host"],
+        parsed["port"],
+        parsed["path"],
+        int(timeout_sec) if str(timeout_sec).isdigit() else 4,
     )
     result["target_classification"] = parsed["classification"]
     result["is_private_vpc"] = parsed["is_private_vpc"]
