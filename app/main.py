@@ -22,15 +22,24 @@ Browser & API Endpoints:
   - GET  /admin/diagnostics  : Mock administrative diagnostics route (Priority 1000 CEL)
   - GET/POST /api/inspect    : Header & query parameter echo endpoint (Priority 1100 CEL)
   - GET  /api/ping           : Lightweight unthrottled endpoint (Priority 3000 Rate Limit)
+  - GET  /vpc-test           : Opens the Interactive Portal directly on Tab 6 (Internal VPC Tester)
+  - GET/POST /api/vpc/ping   : Internal VPC ICMP ping + TCP handshake reachability probe from Cloud Run
+  - GET/POST /api/vpc/curl   : Internal VPC HTTP/HTTPS curl tester from Cloud Run to GCE / internal IPs
+  - GET  /api/vpc/network-info: Inspects Cloud Run container network interfaces (ip addr) & routing table
 """
 
 from datetime import datetime, timezone
 import html
+import ipaddress
 import json
 import os
+import re
+import socket
 import sqlite3
+import subprocess
+import time
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import parse_qs, urlencode
+from urllib.parse import parse_qs, urlencode, urlparse
 import uuid
 
 from fastapi import FastAPI, Request
@@ -180,6 +189,466 @@ def _evaluate_study_login_query(
         conn.close()
 
     return raw_sql, matched_rows, sql_error
+
+
+_VALID_HOSTNAME_RE = re.compile(r"^[a-zA-Z0-9.-]{1,253}$")
+_BLOCKED_METADATA_HOSTS = {
+    "169.254.169.254",
+    "metadata.google.internal",
+    "metadata",
+    "metadata.goog",
+}
+
+
+def _parse_and_validate_vpc_target(
+    raw_target: str,
+    raw_port: Optional[Any] = None,
+    raw_scheme: Optional[str] = None,
+    raw_path: Optional[str] = None,
+    raw_path_hex: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Parses and validates a target IP/hostname (or full URL) for internal VPC ping & curl tests.
+    Allows RFC-1918 private VPC IPs (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), loopback
+    (127.0.0.1 / localhost), and standard IPs/hostnames while blocking shell metacharacters
+    and Cloud Run link-local metadata endpoints (169.254.169.254).
+    """
+    target_str = (raw_target or "").strip()
+    scheme = (raw_scheme or "http").strip().lower()
+    if scheme not in ("http", "https"):
+        scheme = "http"
+
+    parsed_port: Optional[int] = None
+    parsed_path: Optional[str] = None
+
+    # If the user pasted a full URL (e.g., http://10.2.2.42:8080/healthz) into the host field
+    if "://" in target_str:
+        u = urlparse(target_str)
+        if u.scheme in ("http", "https"):
+            scheme = u.scheme
+        if u.hostname:
+            target_str = u.hostname
+        if u.port:
+            parsed_port = u.port
+        if u.path:
+            parsed_path = u.path + (f"?{u.query}" if u.query else "")
+    elif "/" in target_str:
+        parts = target_str.split("/", 1)
+        target_str = parts[0]
+        parsed_path = "/" + parts[1]
+
+    # Handle host:port notation (e.g., 10.2.2.42:8080)
+    if ":" in target_str and target_str.count(":") == 1:
+        h_part, p_part = target_str.split(":", 1)
+        if p_part.isdigit():
+            target_str = h_part
+            parsed_port = int(p_part)
+
+    # Determine port
+    port = parsed_port
+    if raw_port is not None and str(raw_port).strip() != "":
+        try:
+            port = int(str(raw_port).strip())
+        except ValueError:
+            return {
+                "valid": False,
+                "error": f"Invalid TCP port '{raw_port}'. Must be an integer between 1 and 65535.",
+            }
+    if port is None:
+        port = 443 if scheme == "https" else 80
+    if not (1 <= port <= 65535):
+        return {
+            "valid": False,
+            "error": f"TCP port {port} out of range (1..65535).",
+        }
+
+    # Determine HTTP path (support path_hex from browser UI so OWASP SQLi sensitivity 3 never flags deep paths)
+    path = "/"
+    if raw_path_hex:
+        try:
+            path = bytes.fromhex(raw_path_hex.strip()).decode("utf-8", errors="replace")
+        except Exception:
+            path = "/"
+    elif raw_path is not None and str(raw_path).strip() != "":
+        path = str(raw_path).strip()
+    elif parsed_path:
+        path = parsed_path
+    if not path.startswith("/"):
+        path = "/" + path
+
+    if not target_str:
+        return {"valid": False, "error": "Target IP or hostname is required."}
+
+    lower_host = target_str.lower()
+    if lower_host in _BLOCKED_METADATA_HOSTS or lower_host.endswith(".metadata.google.internal"):
+        return {
+            "valid": False,
+            "error": "Access to link-local metadata server (169.254.169.254 / metadata.google.internal) is blocked for security.",
+        }
+
+    # Validate IP address or RFC-1123 hostname
+    ip_classification = "Hostname"
+    is_private_vpc = False
+    is_loopback = False
+    try:
+        ip_obj = ipaddress.ip_address(target_str)
+        if ip_obj.is_link_local:
+            return {
+                "valid": False,
+                "error": f"Link-local address {target_str} is restricted.",
+            }
+        if ip_obj.is_loopback:
+            is_loopback = True
+            ip_classification = "Loopback (Cloud Run Container Self-Test)"
+        elif ip_obj.is_private:
+            is_private_vpc = True
+            ip_classification = "RFC-1918 Internal VPC IP"
+        else:
+            ip_classification = "Public / Non-RFC1918 IP"
+    except ValueError:
+        if not _VALID_HOSTNAME_RE.match(target_str):
+            return {
+                "valid": False,
+                "error": (
+                    f"Invalid target host '{target_str}'. Enter a valid IPv4 address "
+                    "(e.g. 10.2.2.42) or hostname without shell characters."
+                ),
+            }
+        if lower_host == "localhost":
+            is_loopback = True
+            ip_classification = "Loopback (Cloud Run Container Self-Test)"
+        elif lower_host.endswith(".internal") or lower_host.endswith(".local"):
+            is_private_vpc = True
+            ip_classification = "Internal VPC DNS Hostname"
+
+    return {
+        "valid": True,
+        "host": target_str,
+        "port": port,
+        "scheme": scheme,
+        "path": path,
+        "url": f"{scheme}://{target_str}:{port}{path}",
+        "classification": ip_classification,
+        "is_private_vpc": is_private_vpc,
+        "is_loopback": is_loopback,
+    }
+
+
+def _get_container_network_info() -> Dict[str, Any]:
+    """Inspects the Cloud Run container's active network interfaces and routing table."""
+    interfaces_raw = ""
+    routes_raw = ""
+    try:
+        res_addr = subprocess.run(
+            ["ip", "-brief", "addr"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+        interfaces_raw = (res_addr.stdout or res_addr.stderr).strip()
+    except Exception as exc:
+        interfaces_raw = f"Unable to run 'ip -brief addr': {exc}"
+
+    try:
+        res_route = subprocess.run(
+            ["ip", "route"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+        routes_raw = (res_route.stdout or res_route.stderr).strip()
+    except Exception as exc:
+        routes_raw = f"Unable to run 'ip route': {exc}"
+
+    has_rfc1918_vpc_nic = any(
+        prefix in interfaces_raw for prefix in ("10.2.", "10.", "192.168.", "172.")
+    )
+    return {
+        "service": SERVICE_NAME,
+        "revision": SERVICE_REVISION,
+        "region": GCP_REGION,
+        "interfaces_brief": interfaces_raw,
+        "routing_table": routes_raw,
+        "vpc_interface_detected_in_container": has_rfc1918_vpc_nic,
+        "note": (
+            "To reach internal VPC IPs (such as GCE VM 10.2.2.42 in gcp2-vpc), attach either "
+            "Direct VPC Egress (--network=gcp2-vpc --subnet=jkt-subnet-02) or a Serverless VPC "
+            "Access Connector to this Cloud Run service."
+        ),
+    }
+
+
+def _execute_vpc_ping(
+    host: str, port: int = 80, count: int = 3, timeout_sec: int = 2
+) -> Dict[str, Any]:
+    """
+    Executes both:
+      1. OS ICMP `ping -c <count> -W <timeout_sec> <host>`
+      2. TCP Handshake probes (`socket.create_connection((host, port))`)
+    Why both? In Cloud Run (1st gen gVisor sandbox or Serverless VPC Connector), raw ICMP sockets
+    are often blocked or unsupported even when the VPC route is active, whereas TCP connect probes
+    always work across both Direct VPC Egress and Serverless VPC Access Connectors.
+    """
+    count = max(1, min(int(count), 5))
+    timeout_sec = max(1, min(int(timeout_sec), 5))
+
+    # 1. OS ICMP ping command
+    ping_cmd = ["ping", "-c", str(count), "-W", str(timeout_sec), host]
+    icmp_stdout = ""
+    icmp_stderr = ""
+    icmp_exit_code = -1
+    t0 = time.monotonic()
+    try:
+        proc = subprocess.run(
+            ping_cmd,
+            capture_output=True,
+            text=True,
+            timeout=(count * timeout_sec) + 2,
+            check=False,
+        )
+        icmp_exit_code = proc.returncode
+        icmp_stdout = proc.stdout.strip()
+        icmp_stderr = proc.stderr.strip()
+    except subprocess.TimeoutExpired as exc:
+        icmp_exit_code = 124
+        icmp_stdout = (exc.stdout or "").strip() if isinstance(exc.stdout, str) else ""
+        icmp_stderr = f"ICMP ping timed out after {(count * timeout_sec) + 2}s."
+    except Exception as exc:
+        icmp_stderr = str(exc)
+    icmp_duration_ms = round((time.monotonic() - t0) * 1000, 2)
+
+    # 2. TCP Handshake probes to (host, port)
+    tcp_probes: List[Dict[str, Any]] = []
+    tcp_connected_count = 0
+    tcp_rst_reachable_count = 0
+    local_source_ip: Optional[str] = None
+    remote_resolved_ip: Optional[str] = None
+
+    for seq in range(1, count + 1):
+        p_start = time.monotonic()
+        try:
+            with socket.create_connection((host, port), timeout=timeout_sec) as sock:
+                rtt_ms = round((time.monotonic() - p_start) * 1000, 2)
+                local_source_ip = sock.getsockname()[0]
+                remote_resolved_ip = sock.getpeername()[0]
+                tcp_connected_count += 1
+                tcp_probes.append(
+                    {
+                        "seq": seq,
+                        "status": "CONNECTED (TCP SYN -> SYN-ACK)",
+                        "reachable": True,
+                        "port_open": True,
+                        "rtt_ms": rtt_ms,
+                        "local_source_ip": local_source_ip,
+                        "remote_ip": remote_resolved_ip,
+                    }
+                )
+        except ConnectionRefusedError as exc:
+            rtt_ms = round((time.monotonic() - p_start) * 1000, 2)
+            tcp_rst_reachable_count += 1
+            tcp_probes.append(
+                {
+                    "seq": seq,
+                    "status": "HOST_REACHABLE_PORT_CLOSED (TCP RST / Connection Refused)",
+                    "reachable": True,
+                    "port_open": False,
+                    "rtt_ms": rtt_ms,
+                    "error": str(exc),
+                }
+            )
+        except Exception as exc:
+            rtt_ms = round((time.monotonic() - p_start) * 1000, 2)
+            tcp_probes.append(
+                {
+                    "seq": seq,
+                    "status": "UNREACHABLE_OR_FILTERED",
+                    "reachable": False,
+                    "port_open": False,
+                    "rtt_ms": rtt_ms,
+                    "error": str(exc),
+                }
+            )
+
+    icmp_ok = icmp_exit_code == 0
+    tcp_ok = tcp_connected_count > 0
+    l3_rst_ok = tcp_rst_reachable_count > 0
+    overall_reachable = icmp_ok or tcp_ok or l3_rst_ok
+
+    if tcp_ok:
+        diagnosis = (
+            f"SUCCESS: Target {host}:{port} is reachable from Cloud Run! "
+            f"TCP handshake succeeded ({tcp_connected_count}/{count} probes) "
+            f"from container source IP {local_source_ip or 'auto'}."
+        )
+    elif l3_rst_ok:
+        diagnosis = (
+            f"L3 VPC REACHABLE (PORT CLOSED): Target host {host} responded with TCP RST "
+            f"(Connection Refused) on port {port} in ~{tcp_probes[0]['rtt_ms']} ms. "
+            "This confirms VPC network routing and firewall rules allow Cloud Run to reach the VM, "
+            f"but no service is currently listening on TCP port {port} (try port 22 or start an HTTP server on the VM)."
+        )
+    elif icmp_ok:
+        diagnosis = f"SUCCESS: Target {host} responded to ICMP echo requests, though TCP port {port} did not respond."
+    else:
+        diagnosis = (
+            f"UNREACHABLE / TIMEOUT: Cloud Run could not reach {host}:{port}. "
+            "If this is an internal VPC IP (e.g. 10.2.2.42 in gcp2-vpc), verify that: "
+            "(1) Direct VPC Egress or a Serverless VPC Access Connector is attached to 'cloud-armor-demo-service', and "
+            "(2) A VPC Ingress firewall rule on 'gcp2-vpc' allows traffic from the Cloud Run subnet/connector to the GCE VM."
+        )
+
+    return {
+        "operation": "vpc_ping",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "service": SERVICE_NAME,
+        "revision": SERVICE_REVISION,
+        "target_host": host,
+        "target_port": port,
+        "overall_reachable": overall_reachable,
+        "diagnosis": diagnosis,
+        "icmp_ping": {
+            "command": " ".join(ping_cmd),
+            "exit_code": icmp_exit_code,
+            "succeeded": icmp_ok,
+            "duration_ms": icmp_duration_ms,
+            "stdout": icmp_stdout,
+            "stderr": icmp_stderr,
+            "cloud_run_icmp_note": (
+                "Note: Cloud Run 1st-Gen sandbox and Serverless VPC Connectors do not forward raw ICMP packets; "
+                "use the TCP Handshake Probe results below (or Direct VPC Egress with Gen2 execution environment) "
+                "as the authoritative VPC reachability check."
+            ),
+        },
+        "tcp_probe": {
+            "target": f"{host}:{port}",
+            "probes_sent": count,
+            "tcp_connected_count": tcp_connected_count,
+            "tcp_rst_reachable_count": tcp_rst_reachable_count,
+            "local_source_ip": local_source_ip,
+            "remote_resolved_ip": remote_resolved_ip,
+            "results": tcp_probes,
+        },
+    }
+
+
+def _execute_vpc_curl(
+    scheme: str,
+    host: str,
+    port: int,
+    path: str,
+    timeout_sec: int = 5,
+) -> Dict[str, Any]:
+    """
+    Executes `curl -i -s -S -L --max-time <timeout_sec>` from the Cloud Run container
+    to the specified internal VPC IP/hostname, port, and path.
+    """
+    timeout_sec = max(1, min(int(timeout_sec), 10))
+    target_url = f"{scheme}://{host}:{port}{path}"
+    metrics_marker = "---CURL_STUDY_METRICS---"
+    write_out_fmt = (
+        f"\n{metrics_marker}\n"
+        "http_code:%{http_code}\n"
+        "time_namelookup:%{time_namelookup}\n"
+        "time_connect:%{time_connect}\n"
+        "time_starttransfer:%{time_starttransfer}\n"
+        "time_total:%{time_total}\n"
+        "local_ip:%{local_ip}\n"
+        "local_port:%{local_port}\n"
+        "remote_ip:%{remote_ip}\n"
+        "remote_port:%{remote_port}\n"
+        "size_download:%{size_download}"
+    )
+    curl_cmd = [
+        "curl",
+        "-i",
+        "-s",
+        "-S",
+        "-L",
+        "--max-time",
+        str(timeout_sec),
+        "--connect-timeout",
+        str(min(timeout_sec, 4)),
+        "-w",
+        write_out_fmt,
+        target_url,
+    ]
+    display_cmd = f"curl -i -s -S -L --max-time {timeout_sec} '{target_url}'"
+
+    raw_stdout = ""
+    raw_stderr = ""
+    exit_code = -1
+    t0 = time.monotonic()
+    try:
+        proc = subprocess.run(
+            curl_cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec + 2,
+            check=False,
+        )
+        exit_code = proc.returncode
+        raw_stdout = proc.stdout or ""
+        raw_stderr = (proc.stderr or "").strip()
+    except subprocess.TimeoutExpired:
+        exit_code = 28
+        raw_stderr = f"curl timed out after {timeout_sec} seconds."
+    except Exception as exc:
+        raw_stderr = str(exc)
+    wall_ms = round((time.monotonic() - t0) * 1000, 2)
+
+    http_response_text = raw_stdout
+    metrics: Dict[str, Any] = {}
+    if metrics_marker in raw_stdout:
+        http_response_text, metrics_block = raw_stdout.rsplit(metrics_marker, 1)
+        for line in metrics_block.strip().splitlines():
+            if ":" in line:
+                k, v = line.split(":", 1)
+                metrics[k.strip()] = v.strip()
+
+    http_code_str = metrics.get("http_code", "000")
+    http_status = int(http_code_str) if http_code_str.isdigit() else 0
+    reachable = exit_code == 0 and http_status > 0
+
+    if reachable:
+        diagnosis = (
+            f"SUCCESS: HTTP {http_status} received from {target_url} "
+            f"(local egress IP: {metrics.get('local_ip') or 'auto'} -> "
+            f"remote: {metrics.get('remote_ip') or host}:{metrics.get('remote_port') or port}, "
+            f"total time: {metrics.get('time_total', 'n/a')}s)."
+        )
+    elif exit_code == 7 or "Connection refused" in raw_stderr:
+        diagnosis = (
+            f"L3 VPC REACHABLE / HTTP CONNECTION REFUSED (curl exit 7): Target VM {host} is reachable "
+            f"over the network, but refused the TCP connection on port {port} ({raw_stderr}). "
+            f"Ensure an HTTP server (e.g. `python3 -m http.server {port}` or nginx) is running on {host}:{port}."
+        )
+    elif exit_code == 28 or "timed out" in raw_stderr.lower():
+        diagnosis = (
+            f"CONNECTION TIMED OUT (curl exit 28): Cloud Run could not establish a TCP connection to {target_url} "
+            f"within {timeout_sec}s ({raw_stderr}). Check that Cloud Run has Direct VPC Egress (or VPC Connector) "
+            "configured for your VPC and that VPC firewall rules allow ingress to the GCE VM."
+        )
+    else:
+        diagnosis = f"CURL ERROR (exit {exit_code}): {raw_stderr or 'No HTTP response received.'}"
+
+    return {
+        "operation": "vpc_curl",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "service": SERVICE_NAME,
+        "revision": SERVICE_REVISION,
+        "target_url": target_url,
+        "command": display_cmd,
+        "exit_code": exit_code,
+        "reachable": reachable,
+        "http_status": http_status,
+        "duration_ms": wall_ms,
+        "metrics": metrics,
+        "diagnosis": diagnosis,
+        "response_preview": http_response_text.strip()[:4000],
+        "stderr": raw_stderr,
+    }
 
 
 SHARED_CSS = """
@@ -583,6 +1052,7 @@ def _render_study_portal_html(request: Request) -> str:
       <button class="tab-btn" id="tab-btn-lfirce" onclick="switchTab('lfirce')" role="tab">3. File &amp; Ping Tool (LFI &amp; RCE)</button>
       <button class="tab-btn" id="tab-btn-cel" onclick="switchTab('cel')" role="tab">4. Admin &amp; Custom CEL Rules</button>
       <button class="tab-btn" id="tab-btn-rate" onclick="switchTab('rate')" role="tab">5. Rate-Limit Burst Tester</button>
+      <button class="tab-btn" id="tab-btn-vpc" onclick="switchTab('vpc')" role="tab">6. Internal VPC Tester (Ping &amp; Curl to GCE)</button>
     </nav>
 
     <!-- TAB 1: SQL INJECTION LOGIN PORTAL -->
@@ -725,8 +1195,8 @@ def _render_study_portal_html(request: Request) -> str:
 
         <div class="card">
           <h3>Enforcing Rule: Priority 2000 (<code>xss-v33-stable</code>)</h3>
-          <div class="code-box">evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 1}) ||
-evaluatePreconfiguredWaf('xss-v33-stable', {'sensitivity': 1})</div>
+          <div class="code-box">evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 3}) ||
+evaluatePreconfiguredWaf('xss-v33-stable', {'sensitivity': 2})</div>
           <p class="subtext">
             When Cloud Armor is detached, submitting <code>&lt;script&gt;alert("XSS-Study-Test")&lt;/script&gt;</code> reaches the Cloud Run origin and opens the <code>/search</code> results page showing an unfiltered XSS detection banner. When Cloud Armor is attached, the GFE blocks the request at the edge with <code>HTTP 403 Forbidden</code>.
           </p>
@@ -776,11 +1246,11 @@ evaluatePreconfiguredWaf('xss-v33-stable', {'sensitivity': 1})</div>
 
         <div class="card">
           <h3>Enforcing Rule: Priority 2100 (<code>lfi-v33-stable</code> &amp; <code>rce-v33-stable</code>)</h3>
-          <div class="code-box">evaluatePreconfiguredWaf('lfi-v33-stable', {'sensitivity': 1}) ||
-evaluatePreconfiguredWaf('rce-v33-stable', {'sensitivity': 1}) ||
-evaluatePreconfiguredWaf('scannerdetection-v33-stable', {'sensitivity': 1})</div>
+          <div class="code-box">evaluatePreconfiguredWaf('lfi-v33-stable', {'sensitivity': 2}) ||
+evaluatePreconfiguredWaf('rce-v33-stable', {'sensitivity': 2}) ||
+evaluatePreconfiguredWaf('scannerdetection-v33-stable', {'sensitivity': 2})</div>
           <p class="subtext">
-             Note: This Cloud Run container never touches the OS filesystem or shell—it matches against an in-memory dictionary so you can safely observe LFI/RCE pattern detection before and after Cloud Armor enforcement.
+             Note: This tab simulates file path and command parameter inspection against an in-memory dictionary for OWASP WAF testing. To perform <strong>real network <code>ping</code> and <code>curl</code></strong> from Cloud Run to an internal VPC GCE VM, open <strong>Tab 6 (Internal VPC Tester)</strong>!
           </p>
         </div>
       </div>
@@ -845,14 +1315,135 @@ request.query.contains('policy_test=block')</div>
         <div class="burst-grid" id="burst-grid"></div>
       </div>
     </section>
+
+    <!-- TAB 6: INTERNAL VPC TESTER (PING & CURL FROM CLOUD RUN TO GCE) -->
+    <section class="tab-panel" id="panel-vpc" role="tabpanel">
+      <div class="grid-2">
+        <div class="card">
+          <h2>Internal VPC Connectivity Tester (Cloud Run &rarr; GCE VM)</h2>
+          <p class="subtext">
+            Test outbound <strong>ICMP <code>ping</code></strong>, <strong>TCP Handshake Latency Probes</strong>, and <strong>HTTP/HTTPS <code>curl</code></strong> directly from this Cloud Run instance (<code>__SERVICE_NAME__</code> in <code>__GCP_REGION__</code>) to any internal VPC IP address or GCE VM inside <code>gcp2-vpc</code>.
+          </p>
+
+          <div class="preset-bar">
+            <button type="button" class="btn btn-primary btn-sm" id="btn-vpc-preset-gce-http" onclick="fillVpcTarget('10.2.2.42', '80', 'http', '/')">
+              🖥️ GCE VM openvpn-vm-01 (10.2.2.42:80)
+            </button>
+            <button type="button" class="btn btn-outline btn-sm" id="btn-vpc-preset-gce-ssh" onclick="fillVpcTarget('10.2.2.42', '22', 'http', '/')">
+              🔑 GCE VM SSH Port Probe (10.2.2.42:22)
+            </button>
+            <button type="button" class="btn btn-outline btn-sm" id="btn-vpc-preset-subnet1" onclick="fillVpcTarget('10.2.1.10', '80', 'http', '/')">
+              🌐 jkt-subnet-01 IP (10.2.1.10:80)
+            </button>
+            <button type="button" class="btn btn-success-soft btn-sm" id="btn-vpc-preset-loopback" onclick="fillVpcTarget('127.0.0.1', '8080', 'http', '/healthz')">
+              ✅ Container Self-Test (127.0.0.1:8080/healthz)
+            </button>
+          </div>
+
+          <div class="form-group">
+            <label for="vpc-host">Target Internal VPC IP / Hostname (or paste full URL e.g. <code>http://10.2.2.42:8080/healthz</code>)</label>
+            <input class="form-control" type="text" id="vpc-host" value="10.2.2.42" oninput="handleVpcHostInput()" placeholder="e.g. 10.2.2.42 or 10.2.1.15" />
+          </div>
+
+          <div style="display:grid; grid-template-columns: 0.9fr 0.9fr 1.4fr 0.8fr; gap:10px;">
+            <div class="form-group">
+              <label for="vpc-scheme">Protocol</label>
+              <select class="form-control" id="vpc-scheme" onchange="updateVpcCmdPreview()">
+                <option value="http" selected>http://</option>
+                <option value="https">https://</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="vpc-port">TCP Port</label>
+              <input class="form-control" type="number" id="vpc-port" value="80" min="1" max="65535" oninput="updateVpcCmdPreview()" />
+            </div>
+            <div class="form-group">
+              <label for="vpc-path">HTTP Path (for <code>curl</code>)</label>
+              <input class="form-control" type="text" id="vpc-path" value="/" oninput="updateVpcCmdPreview()" placeholder="/ or /healthz" />
+            </div>
+            <div class="form-group">
+              <label for="vpc-timeout">Timeout (s)</label>
+              <input class="form-control" type="number" id="vpc-timeout" value="3" min="1" max="10" oninput="updateVpcCmdPreview()" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Commands Executed Inside Cloud Run Container:</label>
+            <div class="code-box" id="vpc-cmd-preview"></div>
+          </div>
+
+          <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:14px;">
+            <button type="button" class="btn btn-primary" id="btn-vpc-ping" onclick="runVpcPing()">
+              📡 Run Ping Test (ICMP + TCP Probe)
+            </button>
+            <button type="button" class="btn btn-primary" id="btn-vpc-curl" style="background:#0f766e;" onclick="runVpcCurl()">
+              🌐 Run Curl Test (HTTP Request)
+            </button>
+            <button type="button" class="btn btn-outline" id="btn-vpc-both" onclick="runVpcBoth()">
+              🚀 Run Both (Ping + Curl)
+            </button>
+          </div>
+
+          <div id="vpc-test-result" style="margin-top:18px; display:none;"></div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+            <h3 style="margin:0;">Cloud Run Container Network Interfaces &amp; Routes</h3>
+            <button type="button" class="btn btn-outline btn-sm" id="btn-vpc-refresh-net" onclick="loadVpcNetworkInfo()">
+              🔄 Refresh Interfaces
+            </button>
+          </div>
+          <p class="subtext" style="margin-bottom:10px;">
+            Live output of <code>ip -brief addr</code> and <code>ip route</code> inside this Cloud Run container. When <strong>Direct VPC Egress</strong> is attached, you will see a second interface with an IP from your VPC subnet (e.g., <code>10.2.2.x/24</code>).
+          </p>
+          <div id="vpc-netinfo-box">
+            <div class="code-box">Click "Refresh Interfaces" or switch to Tab 6 to load container network interfaces...</div>
+          </div>
+
+          <h3 style="margin-top:18px;">Quick Study Guide: Connecting Cloud Run to GCE in <code>gcp2-vpc</code></h3>
+          <div class="alert-box alert-warn" style="margin-bottom:10px;">
+            <strong>Why are ICMP <code>ping</code> and TCP <code>curl</code> both included?</strong><br/>
+            In Cloud Run's default 1st-Gen sandbox (or via Serverless VPC Connectors), raw ICMP <code>ping</code> is restricted by the container sandbox even when VPC routing works. Our <strong>Ping Test</strong> runs both OS <code>ping -c 3</code> <em>and</em> a <strong>3x TCP Handshake Probe</strong> so you can reliably verify L3/L4 reachability and measure round-trip latency in milliseconds!
+          </div>
+
+          <p style="font-size:0.86rem; font-weight:600; margin-bottom:4px;">1. Attach Direct VPC Egress to Cloud Run (GUI or CLI):</p>
+          <p class="subtext" style="margin-bottom:6px;">
+            <strong>GUI:</strong> Go to <strong>Cloud Run &rarr; <code>cloud-armor-demo-service</code> &rarr; Edit &amp; deploy new revision &rarr; Networking &rarr; Outbound traffic &rarr; Direct VPC egress</strong> &rarr; Network: <code>gcp2-vpc</code>, Subnet: <code>jkt-subnet-02 (10.2.2.0/24)</code>, Route only requests to private IPs through the VPC.
+          </p>
+          <div class="code-box">gcloud run services update cloud-armor-demo-service \
+  --region=asia-southeast2 \
+  --network=gcp2-vpc \
+  --subnet=jkt-subnet-02 \
+  --vpc-egress=private-ranges-only \
+  --project=gcp-demo-02-307713</div>
+
+          <p style="font-size:0.86rem; font-weight:600; margin-bottom:4px; margin-top:10px;">2. Ensure VPC Firewall Allows Ingress to Your GCE VM:</p>
+          <div class="code-box">gcloud compute firewall-rules create allow-cloudrun-to-gce-study \
+  --network=gcp2-vpc \
+  --action=ALLOW \
+  --direction=INGRESS \
+  --rules=tcp:80,tcp:8080,tcp:22,icmp \
+  --source-ranges=10.2.2.0/24 \
+  --project=gcp-demo-02-307713</div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <script>
     function switchTab(tabId) {
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
       document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
-      document.getElementById('tab-btn-' + tabId).classList.add('active');
-      document.getElementById('panel-' + tabId).classList.add('active');
+      const btn = document.getElementById('tab-btn-' + tabId);
+      const panel = document.getElementById('panel-' + tabId);
+      if (btn && panel) {
+        btn.classList.add('active');
+        panel.classList.add('active');
+      }
+      if (tabId === 'vpc') {
+        loadVpcNetworkInfo();
+      }
     }
 
     function updateSqlPreview() {
@@ -966,10 +1557,222 @@ request.query.contains('policy_test=block')</div>
     }
 
     function escapeHtml(str) {
-      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function toHexString(str) {
+      const bytes = new TextEncoder().encode(str || '/');
+      return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    function fillVpcTarget(host, port, scheme, path) {
+      document.getElementById('vpc-host').value = host;
+      document.getElementById('vpc-port').value = port;
+      document.getElementById('vpc-scheme').value = scheme;
+      document.getElementById('vpc-path').value = path;
+      updateVpcCmdPreview();
+    }
+
+    function handleVpcHostInput() {
+      const raw = document.getElementById('vpc-host').value.trim();
+      if (raw.startsWith('http://') || raw.startsWith('https://')) {
+        try {
+          const u = new URL(raw);
+          document.getElementById('vpc-scheme').value = u.protocol === 'https:' ? 'https' : 'http';
+          document.getElementById('vpc-host').value = u.hostname;
+          document.getElementById('vpc-port').value = u.port || (u.protocol === 'https:' ? '443' : '80');
+          document.getElementById('vpc-path').value = (u.pathname || '/') + (u.search || '');
+        } catch (e) {
+          // keep as typed
+        }
+      }
+      updateVpcCmdPreview();
+    }
+
+    function updateVpcCmdPreview() {
+      const host = document.getElementById('vpc-host').value.trim() || '10.2.2.42';
+      const scheme = document.getElementById('vpc-scheme').value || 'http';
+      const port = document.getElementById('vpc-port').value || '80';
+      let path = document.getElementById('vpc-path').value.trim() || '/';
+      if (!path.startsWith('/')) path = '/' + path;
+      const timeout = document.getElementById('vpc-timeout').value || '3';
+      const url = scheme + '://' + host + ':' + port + path;
+      const preview =
+        '# 1. Ping & TCP Handshake Probe from Cloud Run:\n' +
+        'ping -c 3 -W ' + timeout + ' ' + host + '   # + 3x TCP SYN probe to ' + host + ':' + port + '\n\n' +
+        '# 2. HTTP/HTTPS Curl from Cloud Run:\n' +
+        'curl -i -s -S -L --max-time ' + timeout + " '" + url + "'";
+      document.getElementById('vpc-cmd-preview').textContent = preview;
+    }
+
+    async function loadVpcNetworkInfo() {
+      const box = document.getElementById('vpc-netinfo-box');
+      if (!box) return;
+      try {
+        const resp = await fetch('/api/vpc/network-info');
+        const data = await resp.json();
+        const vpcBadge = data.vpc_interface_detected_in_container
+          ? '<span class="badge badge-green">Direct VPC Interface Detected</span>'
+          : '<span class="badge badge-amber">Standard Cloud Run Sandbox Interfaces (No Direct VPC NIC Detected Yet)</span>';
+        box.innerHTML =
+          '<div style="margin-bottom:8px;">' + vpcBadge + '</div>' +
+          '<div style="font-size:0.8rem; font-weight:600; margin-bottom:2px;">Container Interfaces (<code>ip -brief addr</code>):</div>' +
+          '<div class="code-box" style="margin-top:2px;">' + escapeHtml(data.interfaces_brief || 'n/a') + '</div>' +
+          '<div style="font-size:0.8rem; font-weight:600; margin-bottom:2px;">Container Routing Table (<code>ip route</code>):</div>' +
+          '<div class="code-box" style="margin-top:2px;">' + escapeHtml(data.routing_table || 'n/a') + '</div>';
+      } catch (err) {
+        box.innerHTML = '<div class="alert-box alert-danger">Error loading container interfaces: ' + escapeHtml(err) + '</div>';
+      }
+    }
+
+    function formatPingResultCard(data) {
+      if (data.error) {
+        return '<div class="alert-box alert-danger"><strong>❌ Validation Error:</strong> ' + escapeHtml(data.error) + '</div>';
+      }
+      const reachClass = data.overall_reachable ? 'alert-success' : 'alert-danger';
+      const reachIcon = data.overall_reachable ? '✅ REACHABLE FROM CLOUD RUN' : '❌ UNREACHABLE / TIMEOUT FROM CLOUD RUN';
+      const tcpRows = ((data.tcp_probe && data.tcp_probe.results) || []).map(r =>
+        '<tr>' +
+          '<td><code>#' + r.seq + '</code></td>' +
+          '<td>' + (r.reachable ? '<span class="badge badge-green">' + escapeHtml(r.status) + '</span>' : '<span class="badge badge-red">' + escapeHtml(r.status) + '</span>') + '</td>' +
+          '<td><code>' + r.rtt_ms + ' ms</code></td>' +
+          '<td><code>' + escapeHtml(r.local_source_ip || 'n/a') + '</code></td>' +
+          '<td><code>' + escapeHtml(r.error || 'OK') + '</code></td>' +
+        '</tr>'
+      ).join('');
+
+      const icmpOut = (data.icmp_ping && (data.icmp_ping.stdout || data.icmp_ping.stderr)) || 'No ICMP output';
+      return (
+        '<div class="alert-box ' + reachClass + '">' +
+          '<strong>📡 PING TEST — ' + reachIcon + '</strong><br/>' +
+          escapeHtml(data.diagnosis) +
+        '</div>' +
+        '<h3 style="margin-top:12px;">TCP Handshake Probes to <code>' + escapeHtml(data.target_host + ':' + data.target_port) + '</code></h3>' +
+        '<table class="data-table">' +
+          '<thead><tr><th>Probe</th><th>TCP Result</th><th>RTT Latency</th><th>Cloud Run Source IP</th><th>Detail</th></tr></thead>' +
+          '<tbody>' + tcpRows + '</tbody>' +
+        '</table>' +
+        '<h3 style="margin-top:14px;">OS ICMP <code>' + escapeHtml(data.icmp_ping ? data.icmp_ping.command : 'ping') + '</code> Output (exit=' + (data.icmp_ping ? data.icmp_ping.exit_code : '') + ')</h3>' +
+        '<div class="code-box">' + escapeHtml(icmpOut) + '</div>'
+      );
+    }
+
+    function formatCurlResultCard(data) {
+      if (data.error) {
+        return '<div class="alert-box alert-danger"><strong>❌ Validation Error:</strong> ' + escapeHtml(data.error) + '</div>';
+      }
+      const reachClass = data.reachable ? 'alert-success' : (data.exit_code === 7 ? 'alert-warn' : 'alert-danger');
+      const m = data.metrics || {};
+      const bodyOut = data.response_preview || data.stderr || 'No response output';
+      return (
+        '<div class="alert-box ' + reachClass + '" style="margin-top:14px;">' +
+          '<strong>🌐 CURL TEST — ' + (data.reachable ? '✅ HTTP ' + data.http_status + ' RECEIVED' : '❌ CURL EXIT ' + data.exit_code) + '</strong><br/>' +
+          escapeHtml(data.diagnosis) +
+        '</div>' +
+        '<table class="data-table">' +
+          '<thead><tr><th>Target URL</th><th>HTTP Status</th><th>Connect Time</th><th>Total Time</th><th>Cloud Run Source IP</th><th>Remote IP:Port</th></tr></thead>' +
+          '<tbody><tr>' +
+            '<td><code>' + escapeHtml(data.target_url) + '</code></td>' +
+            '<td><strong>' + escapeHtml(String(data.http_status || '000')) + '</strong></td>' +
+            '<td><code>' + escapeHtml((m.time_connect || 'n/a') + 's') + '</code></td>' +
+            '<td><code>' + escapeHtml((m.time_total || 'n/a') + 's') + '</code></td>' +
+            '<td><code>' + escapeHtml(m.local_ip || 'n/a') + '</code></td>' +
+            '<td><code>' + escapeHtml((m.remote_ip || '') + ':' + (m.remote_port || '')) + '</code></td>' +
+          '</tr></tbody>' +
+        '</table>' +
+        '<h3 style="margin-top:14px;">Executed Command: <code>' + escapeHtml(data.command) + '</code></h3>' +
+        '<div class="code-box">' + escapeHtml(bodyOut) + '</div>'
+      );
+    }
+
+    async function runVpcPing() {
+      const box = document.getElementById('vpc-test-result');
+      box.style.display = 'block';
+      const host = document.getElementById('vpc-host').value.trim();
+      const port = document.getElementById('vpc-port').value.trim() || '80';
+      const timeout = document.getElementById('vpc-timeout').value.trim() || '3';
+      box.innerHTML = '<div class="alert-box alert-warn">Running ICMP ping &amp; 3x TCP Handshake probes from Cloud Run to <code>' + escapeHtml(host + ':' + port) + '</code>...</div>';
+      const qs = new URLSearchParams({host: host, port: port, count: '3', timeout: timeout});
+      try {
+        const resp = await fetch('/api/vpc/ping?' + qs.toString());
+        if (resp.status === 403) {
+          const t = await resp.text();
+          box.innerHTML = '<div class="alert-box alert-danger"><strong>🛡️ BLOCKED AT EDGE BY CLOUD ARMOR (HTTP 403)</strong><div class="code-box">' + escapeHtml(t.slice(0, 400)) + '</div></div>';
+          return;
+        }
+        const data = await resp.json();
+        box.innerHTML = formatPingResultCard(data);
+      } catch (err) {
+        box.innerHTML = '<div class="alert-box alert-danger">Request error: ' + escapeHtml(err) + '</div>';
+      }
+    }
+
+    async function runVpcCurl() {
+      const box = document.getElementById('vpc-test-result');
+      box.style.display = 'block';
+      const host = document.getElementById('vpc-host').value.trim();
+      const port = document.getElementById('vpc-port').value.trim() || '80';
+      const scheme = document.getElementById('vpc-scheme').value || 'http';
+      const path = document.getElementById('vpc-path').value.trim() || '/';
+      const timeout = document.getElementById('vpc-timeout').value.trim() || '3';
+      box.innerHTML = '<div class="alert-box alert-warn">Running <code>curl -i</code> from Cloud Run to <code>' + escapeHtml(scheme + '://' + host + ':' + port + path) + '</code>...</div>';
+      const qs = new URLSearchParams({
+        host: host,
+        port: port,
+        scheme: scheme,
+        path_hex: toHexString(path),
+        timeout: timeout
+      });
+      try {
+        const resp = await fetch('/api/vpc/curl?' + qs.toString());
+        if (resp.status === 403) {
+          const t = await resp.text();
+          box.innerHTML = '<div class="alert-box alert-danger"><strong>🛡️ BLOCKED AT EDGE BY CLOUD ARMOR (HTTP 403)</strong><div class="code-box">' + escapeHtml(t.slice(0, 400)) + '</div></div>';
+          return;
+        }
+        const data = await resp.json();
+        box.innerHTML = formatCurlResultCard(data);
+      } catch (err) {
+        box.innerHTML = '<div class="alert-box alert-danger">Request error: ' + escapeHtml(err) + '</div>';
+      }
+    }
+
+    async function runVpcBoth() {
+      const box = document.getElementById('vpc-test-result');
+      box.style.display = 'block';
+      const host = document.getElementById('vpc-host').value.trim();
+      const port = document.getElementById('vpc-port').value.trim() || '80';
+      const scheme = document.getElementById('vpc-scheme').value || 'http';
+      const path = document.getElementById('vpc-path').value.trim() || '/';
+      const timeout = document.getElementById('vpc-timeout').value.trim() || '3';
+      box.innerHTML = '<div class="alert-box alert-warn">Running full VPC diagnostic (Ping + TCP Handshake + HTTP Curl) from Cloud Run to <code>' + escapeHtml(host + ':' + port) + '</code>...</div>';
+      try {
+        const pingQs = new URLSearchParams({host: host, port: port, count: '3', timeout: timeout});
+        const curlQs = new URLSearchParams({host: host, port: port, scheme: scheme, path_hex: toHexString(path), timeout: timeout});
+        const [pingResp, curlResp] = await Promise.all([
+          fetch('/api/vpc/ping?' + pingQs.toString()),
+          fetch('/api/vpc/curl?' + curlQs.toString())
+        ]);
+        const pingData = await pingResp.json();
+        const curlData = await curlResp.json();
+        box.innerHTML = formatPingResultCard(pingData) + '<hr style="margin:20px 0; border:0; border-top:1px solid var(--border-color);"/>' + formatCurlResultCard(curlData);
+        loadVpcNetworkInfo();
+      } catch (err) {
+        box.innerHTML = '<div class="alert-box alert-danger">Error: ' + escapeHtml(err) + '</div>';
+      }
     }
 
     updateSqlPreview();
+    updateVpcCmdPreview();
+    (function initActiveTabFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab');
+      if (tab) {
+        switchTab(tab);
+      } else if (window.location.pathname === '/vpc-test') {
+        switchTab('vpc');
+      }
+    })();
   </script>
 </body>
 </html>"""
@@ -1171,6 +1974,18 @@ async def api_status(request: Request) -> JSONResponse:
                 ),
                 "/api/ping": (
                     "Rate-limit test endpoint (Protected by Priority 3000 Throttle rule: 10 req/60s)."
+                ),
+                "/vpc-test": (
+                    "Interactive Internal VPC Connectivity Tester Tab (Ping & Curl from Cloud Run to GCE)."
+                ),
+                "/api/vpc/ping": (
+                    "Internal VPC ICMP ping + TCP handshake latency probe from Cloud Run."
+                ),
+                "/api/vpc/curl": (
+                    "Internal VPC HTTP/HTTPS curl tester from Cloud Run to GCE internal IPs."
+                ),
+                "/api/vpc/network-info": (
+                    "Cloud Run container network interfaces (ip -brief addr) and routing table."
                 ),
             },
         },
@@ -1510,3 +2325,103 @@ async def api_ping(request: Request) -> JSONResponse:
             ),
         },
     )
+
+
+@app.get("/vpc-test")
+async def vpc_test_page(request: Request) -> HTMLResponse:
+    """Renders the Study Portal HTML with Tab 6 (Internal VPC Tester) opened automatically."""
+    return HTMLResponse(
+        content=_render_study_portal_html(request), status_code=200
+    )
+
+
+@app.get("/api/vpc/network-info")
+async def api_vpc_network_info() -> JSONResponse:
+    """Returns the Cloud Run container's active network interfaces and routing table."""
+    return JSONResponse(
+        status_code=200,
+        content=_get_container_network_info(),
+    )
+
+
+async def _extract_vpc_request_params(request: Request) -> Dict[str, Any]:
+    """Extracts VPC target parameters from either GET query params or POST body."""
+    params: Dict[str, Any] = dict(request.query_params)
+    if request.method == "POST":
+        raw_body = (await request.body()).decode("utf-8", errors="replace")
+        content_type = request.headers.get("content-type", "").lower()
+        if "application/json" in content_type:
+            try:
+                body_json = json.loads(raw_body)
+                if isinstance(body_json, dict):
+                    params.update(body_json)
+            except Exception:
+                pass
+        else:
+            for k, v in parse_qs(raw_body, keep_blank_values=True).items():
+                if v:
+                    params[k] = v[0]
+    return params
+
+
+@app.api_route("/api/vpc/ping", methods=["GET", "POST"])
+async def api_vpc_ping(request: Request) -> JSONResponse:
+    """
+    Executes an outbound ICMP `ping` and TCP Handshake probe from the Cloud Run instance
+    to a specified internal VPC IP or hostname (e.g., GCE VM 10.2.2.42).
+    """
+    params = await _extract_vpc_request_params(request)
+    raw_host = str(params.get("host") or params.get("target") or params.get("ip") or "10.2.2.42")
+    raw_port = params.get("port", 80)
+    count = params.get("count", 3)
+    timeout_sec = params.get("timeout", 2)
+
+    parsed = _parse_and_validate_vpc_target(raw_host, raw_port=raw_port)
+    if not parsed.get("valid"):
+        return JSONResponse(status_code=400, content=parsed)
+
+    result = _execute_vpc_ping(
+        host=parsed["host"],
+        port=parsed["port"],
+        count=int(count) if str(count).isdigit() else 3,
+        timeout_sec=int(timeout_sec) if str(timeout_sec).isdigit() else 2,
+    )
+    result["target_classification"] = parsed["classification"]
+    result["is_private_vpc"] = parsed["is_private_vpc"]
+    return JSONResponse(status_code=200, content=result)
+
+
+@app.api_route("/api/vpc/curl", methods=["GET", "POST"])
+async def api_vpc_curl(request: Request) -> JSONResponse:
+    """
+    Executes an outbound HTTP/HTTPS `curl` request from the Cloud Run instance
+    to a specified internal VPC IP/hostname, port, and path.
+    """
+    params = await _extract_vpc_request_params(request)
+    raw_host = str(params.get("host") or params.get("url") or params.get("target") or "10.2.2.42")
+    raw_port = params.get("port")
+    raw_scheme = params.get("scheme")
+    raw_path = params.get("path")
+    raw_path_hex = params.get("path_hex")
+    timeout_sec = params.get("timeout", 4)
+
+    parsed = _parse_and_validate_vpc_target(
+        raw_host,
+        raw_port=raw_port,
+        raw_scheme=raw_scheme,
+        raw_path=raw_path,
+        raw_path_hex=raw_path_hex,
+    )
+    if not parsed.get("valid"):
+        return JSONResponse(status_code=400, content=parsed)
+
+    result = _execute_vpc_curl(
+        scheme=parsed["scheme"],
+        host=parsed["host"],
+        port=parsed["port"],
+        path=parsed["path"],
+        timeout_sec=int(timeout_sec) if str(timeout_sec).isdigit() else 4,
+    )
+    result["target_classification"] = parsed["classification"]
+    result["is_private_vpc"] = parsed["is_private_vpc"]
+    return JSONResponse(status_code=200, content=result)
