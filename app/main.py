@@ -1004,7 +1004,7 @@ def _render_study_portal_html(request: Request) -> str:
     host = html.escape(ctx["host"] or "gcp2demo01.iphamsterviel.org")
     via_xlb = "Yes (gcp2-xlb)" if ctx["routed_via_google_xlb"] else "Direct / Local"
 
-    template = """<!DOCTYPE html>
+    template = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -1450,7 +1450,12 @@ request.query.contains('policy_test=block')</div>
     function updateSqlPreview() {
       const u = document.getElementById('login-username').value;
       const p = document.getElementById('login-password').value;
-      const sql = "SELECT id, username, role, clearance, vault_note\\nFROM study_users\\nWHERE username = '" + u + "' AND password = '" + p + "';";
+      const NL = String.fromCharCode(10);
+      const sql = [
+        "SELECT id, username, role, clearance, vault_note",
+        "FROM study_users",
+        "WHERE username = '" + u + "' AND password = '" + p + "';"
+      ].join(NL);
       document.getElementById('sql-live-preview').textContent = sql;
     }
 
@@ -1598,11 +1603,14 @@ request.query.contains('policy_test=block')</div>
       if (!path.startsWith('/')) path = '/' + path;
       const timeout = document.getElementById('vpc-timeout').value || '3';
       const url = scheme + '://' + host + ':' + port + path;
-      const preview =
-        '# 1. Ping & TCP Handshake Probe from Cloud Run:\n' +
-        'ping -c 3 -W ' + timeout + ' ' + host + '   # + 3x TCP SYN probe to ' + host + ':' + port + '\n\n' +
-        '# 2. HTTP/HTTPS Curl from Cloud Run:\n' +
-        'curl -i -s -S -L --max-time ' + timeout + " '" + url + "'";
+      const NL = String.fromCharCode(10);
+      const preview = [
+        '# 1. Ping & TCP Handshake Probe from Cloud Run:',
+        'ping -c 3 -W ' + timeout + ' ' + host + '   # + 3x TCP SYN probe to ' + host + ':' + port,
+        '',
+        '# 2. HTTP/HTTPS Curl from Cloud Run:',
+        'curl -i -s -S -L --max-time ' + timeout + " '" + url + "'"
+      ].join(NL);
       document.getElementById('vpc-cmd-preview').textContent = preview;
     }
 
