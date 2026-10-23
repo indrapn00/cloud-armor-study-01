@@ -755,20 +755,24 @@ gcloud run services delete cloud-armor-demo-service \
 
 ---
 
-## 9. Internal VPC Connectivity Study Extension (Cloud Run $\rightarrow$ GCE VM Ping & Curl)
+## 9. Outbound Egress Testing Study Extension (Cloud Run ICMP Ping & HTTP/HTTPS Curl)
 
-To support studying internal VPC communication between **`cloud-armor-demo-service` (Cloud Run)** and **Compute Engine (GCE) instances inside `gcp2-vpc`** (such as `openvpn-vm-01` at `10.2.2.42` in `jkt-subnet-02`), the web portal includes **Tab 6: `6. Internal VPC Tester (Ping & Curl to GCE)`** (also directly accessible at **`https://gcp2demo01.iphamsterviel.org/vpc-test`** or **`https://gcp2demo01.iphamsterviel.org/?tab=vpc`**).
+To support studying outbound network communication from **`cloud-armor-demo-service` (Cloud Run)** to internal VPC instances or external endpoints, the web portal includes **Tab 6: `6. Egress Testing`** (also directly accessible at **`https://gcp2demo01.iphamsterviel.org/vpc-test`** or **`https://gcp2demo01.iphamsterviel.org/?tab=vpc`**).
 
-### 9.1 Built-in Internal VPC Diagnostic Endpoints on `cloud-armor-demo-service`
+The **6. Egress Testing** tab provides two independent, side-by-side testing boxes:
+1. **Box 1: ICMP Ping Test** — Enter any target IP or hostname, packet count (`1..5`), timeout (`1..5s`), and optional fallback TCP probe port, then click **`📡 Run ICMP Ping Test`**.
+2. **Box 2: HTTP / HTTPS Curl Test** — Enter any target IP or hostname, scheme (`http` or `https`), port, HTTP path, and timeout (`1..10s`), then click **`🌐 Run HTTP/HTTPS Curl Test`**.
+
+### 9.1 Built-in Egress Diagnostic Endpoints on `cloud-armor-demo-service`
 
 | Endpoint | Method | Parameters | What It Executes Inside Cloud Run |
 | :--- | :--- | :--- | :--- |
-| **`/vpc-test`** (or **`/?tab=vpc`**) | `GET` | — | Opens the Interactive Browser Study Portal directly on **Tab 6 (Internal VPC Tester)** with one-click presets for `10.2.2.42:80`, `10.2.2.42:22`, `10.2.1.10:80`, and container self-test `127.0.0.1:8080/healthz`. |
-| **`/api/vpc/ping`** | `GET` / `POST` | `host` (e.g. `10.2.2.42`), `port` (default `80`), `count` (`1..5`), `timeout` (`1..5`) | Runs **both**:<br>1. OS ICMP `ping -c <count> -W <timeout> <host>`<br>2. **3x TCP Handshake Latency Probes** (`socket.create_connection((host, port))`) reporting round-trip latency in `ms`, the Cloud Run container's outbound source IP, and whether the target responded with `SYN-ACK` (port open) or `RST` (L3 VPC route works, port closed). |
+| **`/vpc-test`** (or **`/?tab=vpc`**) | `GET` | — | Opens the Interactive Browser Study Portal directly on **Tab 6 (`6. Egress Testing`)** with **Box 1: ICMP Ping Test** and **Box 2: HTTP / HTTPS Curl Test**. |
+| **`/api/vpc/ping`** | `GET` / `POST` | `host` (e.g. `10.0.0.10`), `port` (default `80`), `count` (`1..5`), `timeout` (`1..5`) | Runs **both**:<br>1. OS ICMP `ping -c <count> -W <timeout> <host>`<br>2. **3x TCP Handshake Latency Probes** (`socket.create_connection((host, port))`) reporting round-trip latency in `ms`, the Cloud Run container's outbound source IP, and whether the target responded with `SYN-ACK` (port open) or `RST` (L3 route works, port closed). |
 | **`/api/vpc/curl`** | `GET` / `POST` | `host` (or `url`), `port`, `scheme` (`http`/`https`), `path` (or `path_hex`), `timeout` (`1..10`) | Executes `curl -i -s -S -L --max-time <timeout> '<scheme>://<host>:<port><path>'` and returns HTTP status code, connect/total latency, container local egress IP, remote IP:port, and full HTTP response headers + body. |
-| **`/api/vpc/network-info`** | `GET` | — | Runs `ip -brief addr` and `ip route` inside the Cloud Run container to display active network interfaces and verify whether a Direct VPC Egress NIC (`10.2.x.x`) is attached. |
+| **`/api/vpc/network-info`** | `GET` | — | Runs `ip -brief addr` and `ip route` inside the Cloud Run container to display active network interfaces and verify whether a Direct VPC Egress NIC is attached. |
 
-### 9.2 Step-by-Step: Enabling Internal VPC Egress from Cloud Run to GCE (`gcp2-vpc`)
+### 9.2 Step-by-Step: Enabling Internal VPC Egress from Cloud Run to a VPC Network
 
 #### Option A: Via Google Cloud Console GUI (Recommended)
 1. **Configure Direct VPC Egress on Cloud Run:**
@@ -776,31 +780,31 @@ To support studying internal VPC communication between **`cloud-armor-demo-servi
    - Click **Edit & deploy new revision** at the top.
    - Switch to the **Networking** tab (under the container settings).
    - Under **Outbound traffic**, select **Connect to a VPC for outbound traffic** $\rightarrow$ choose **Direct VPC egress**.
-   - Select **Network**: **`gcp2-vpc`** and **Subnet**: **`jkt-subnet-02 (10.2.2.0/24)`** (or `jkt-subnet-01`).
+   - Select your target **VPC Network** and **Subnet**.
    - Under **Traffic routing**, select **Route only requests to private IPs through the VPC** (`private-ranges-only`).
    - *(Optional for raw ICMP `ping` support)*: Switch to the **Execution environment** section and select **Second generation (`gen2`)**.
    - Click **Deploy**.
-2. **Ensure VPC Firewall Allows Ingress from the Subnet to Your GCE VM:**
+2. **Ensure VPC Firewall Allows Ingress from the Subnet to Your Target VM:**
    - Go to **VPC network $\rightarrow$ Firewall** (`https://console.cloud.google.com/networking/firewalls/list?project=gcp-demo-02-307713`).
-   - Verify or create an Ingress firewall rule on **`gcp2-vpc`** allowing `tcp:80,tcp:8080,tcp:22,icmp` from source IPv4 range `10.2.2.0/24` (and `10.2.1.0/24`).
+   - Verify or create an Ingress firewall rule on your VPC network allowing `tcp:80,tcp:443,tcp:8080,icmp` from your Cloud Run subnet's IPv4 CIDR range.
 
 #### Option B: Via `gcloud` CLI
 ```bash
-# 1. Attach Direct VPC Egress (gcp2-vpc / jkt-subnet-02) to cloud-armor-demo-service
+# 1. Attach Direct VPC Egress to cloud-armor-demo-service
 gcloud run services update cloud-armor-demo-service \
   --region=asia-southeast2 \
-  --network=gcp2-vpc \
-  --subnet=jkt-subnet-02 \
+  --network=<YOUR_VPC_NETWORK> \
+  --subnet=<YOUR_SUBNET> \
   --vpc-egress=private-ranges-only \
   --execution-environment=gen2 \
   --project=gcp-demo-02-307713
 
-# 2. (If needed) Create VPC firewall rule allowing Cloud Run subnet traffic to GCE VMs in gcp2-vpc
-gcloud compute firewall-rules create allow-cloudrun-to-gce-study \
-  --network=gcp2-vpc \
+# 2. (If needed) Create VPC firewall rule allowing Cloud Run subnet traffic to internal VMs
+gcloud compute firewall-rules create allow-cloudrun-to-vpc-study \
+  --network=<YOUR_VPC_NETWORK> \
   --action=ALLOW \
   --direction=INGRESS \
-  --rules=tcp:80,tcp:8080,tcp:22,icmp \
-  --source-ranges=10.2.2.0/24,10.2.1.0/24 \
+  --rules=tcp:80,tcp:443,tcp:8080,icmp \
+  --source-ranges=<YOUR_SUBNET_CIDR> \
   --project=gcp-demo-02-307713
 ```
